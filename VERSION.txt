@@ -2,3 +2,4 @@ Corner (private version)
 2026-11-17  First version
 2026-11-17  Color themes (Ocean, Sunset, Garden, Berry, Midnight) + Light/Dark choice in Settings
 2026-11-17  Pinch to zoom the thinking space on phones
+2026-11-17  iPhone pinch-to-zoom fix on the thinking space

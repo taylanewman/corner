@@ -1394,31 +1394,37 @@ function zoomAt(f,sx,sy,smooth){
 function bindMap(){
   var map=document.getElementById('map');if(!map)return;
   if(!cam)fitAll(false);else applyCam(false);
-  var drag=null,pts={},pinch=null;var lastTap=0;
-  /* two-finger pinch to zoom (and move) on phones and tablets */
-  function pinchStart(){
-    var ids=Object.keys(pts);if(ids.length<2)return;var a=pts[ids[0]],b=pts[ids[1]],r=map.getBoundingClientRect();
-    if(drag&&drag.moved&&(drag.mode==='web'||drag.mode==='thought')&&editable)commit();
-    drag=null;closeDblMenu();
-    pinch={d:Math.max(1,Math.hypot(a.x-b.x,a.y-b.y)),mx:(a.x+b.x)/2-r.left,my:(a.y+b.y)/2-r.top,k:cam.k,cx:cam.x,cy:cam.y};
-    mapBusy=true;map.classList.add('panning');
+  var drag=null,pinch=null,pinchCool=0;
+  /* two-finger pinch to zoom (and move) on phones and tablets.
+     Uses touch events (what iPhone Safari reliably sends) and blocks the browser's own page zoom here. */
+  function tdist(t){return Math.max(1,Math.hypot(t[0].clientX-t[1].clientX,t[0].clientY-t[1].clientY));}
+  function tmid(t){var r=map.getBoundingClientRect();return {x:(t[0].clientX+t[1].clientX)/2-r.left,y:(t[0].clientY+t[1].clientY)/2-r.top};}
+  map.addEventListener('touchstart',function(e){
+    if(e.touches.length>=2){
+      e.preventDefault();
+      if(drag&&drag.moved&&(drag.mode==='web'||drag.mode==='thought')&&editable)commit();
+      drag=null;closeDblMenu();
+      var m=tmid(e.touches);pinch={d:tdist(e.touches),mx:m.x,my:m.y,k:cam.k,cx:cam.x,cy:cam.y};
+      mapBusy=true;map.classList.add('panning');
+    }
+  },{passive:false});
+  map.addEventListener('touchmove',function(e){
+    if(pinch&&e.touches.length>=2){
+      e.preventDefault();
+      var m=tmid(e.touches),k2=Math.max(.2,Math.min(2.5,pinch.k*tdist(e.touches)/pinch.d));
+      var wx=(pinch.mx-pinch.cx)/pinch.k,wy=(pinch.my-pinch.cy)/pinch.k;   /* the spot first pinched stays under the fingers */
+      cam.k=k2;cam.x=m.x-wx*k2;cam.y=m.y-wy*k2;applyCam(false);
+    }else if(e.touches.length===1&&drag)e.preventDefault();   /* one-finger drags never scroll the page */
+  },{passive:false});
+  function tend(e){
+    if(pinch&&e.touches.length<2){pinch=null;drag=null;mapBusy=false;map.classList.remove('panning');pinchCool=Date.now();}
   }
-  function pinchMove(){
-    var ids=Object.keys(pts);if(!pinch||ids.length<2)return;var a=pts[ids[0]],b=pts[ids[1]],r=map.getBoundingClientRect();
-    var d=Math.hypot(a.x-b.x,a.y-b.y),mx=(a.x+b.x)/2-r.left,my=(a.y+b.y)/2-r.top;
-    var k2=Math.max(.2,Math.min(2.5,pinch.k*d/pinch.d));
-    var wx=(pinch.mx-pinch.cx)/pinch.k,wy=(pinch.my-pinch.cy)/pinch.k;   /* the spot first pinched stays under the fingers */
-    cam.k=k2;cam.x=mx-wx*k2;cam.y=my-wy*k2;applyCam(false);
-  }
-  map.addEventListener('pointerdown',function(e){if(e.pointerType==='touch'){pts[e.pointerId]={x:e.clientX,y:e.clientY};try{map.setPointerCapture(e.pointerId);}catch(_){}if(Object.keys(pts).length>=2)pinchStart();}},true);
-  map.addEventListener('pointermove',function(e){if(pts[e.pointerId]){pts[e.pointerId]={x:e.clientX,y:e.clientY};if(pinch){e.stopImmediatePropagation();pinchMove();}}},true);
-  function pinchEnd(e){
-    if(!pts[e.pointerId])return;delete pts[e.pointerId];
-    if(pinch){e.stopImmediatePropagation();if(Object.keys(pts).length<2){pinch=null;drag=null;mapBusy=false;map.classList.remove('panning');saveUI&&saveUI();}}
-  }
-  map.addEventListener('pointerup',pinchEnd,true);
-  map.addEventListener('pointercancel',pinchEnd,true);
-  ['gesturestart','gesturechange'].forEach(function(n){map.addEventListener(n,function(e){e.preventDefault();});});
+  map.addEventListener('touchend',tend);map.addEventListener('touchcancel',tend);
+  ['gesturestart','gesturechange','gestureend'].forEach(function(n){map.addEventListener(n,function(e){e.preventDefault();},{passive:false});});
+  /* while two fingers are down (and just after), ignore the single-finger drag logic */
+  map.addEventListener('pointerdown',function(e){if(pinch||Date.now()-pinchCool<250)e.stopImmediatePropagation();},true);
+  map.addEventListener('pointermove',function(e){if(pinch){e.stopImmediatePropagation();}},true);
+  map.addEventListener('pointerup',function(e){if(pinch||Date.now()-pinchCool<250){e.stopImmediatePropagation();drag=null;mapBusy=false;}},true);
   function toWorld(e){var r=map.getBoundingClientRect();return {x:(e.clientX-r.left-cam.x)/cam.k,y:(e.clientY-r.top-cam.y)/cam.k};}
   map.addEventListener('pointerdown',function(e){
     if(e.pointerType==='mouse'&&e.button!==0)return;
