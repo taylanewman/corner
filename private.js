@@ -216,7 +216,7 @@
       var c = config();
       show('<h1>Connect your sync space</h1><p>Paste the two codes from the setup guide. You only do this once on each device.</p>' +
         '<form><label for="cp-url">Project URL</label><input id="cp-url" type="url" placeholder="https://xxxx.supabase.co" value="' + esc(c.url) + '" required>' +
-        '<label for="cp-key">Public (anon) key</label><input id="cp-key" type="text" placeholder="eyJ…" value="' + esc(c.key) + '" required autocomplete="off">' +
+        '<label for="cp-key">Publishable key</label><input id="cp-key" type="text" placeholder="sb_publishable_…" value="' + esc(c.key) + '" required autocomplete="off">' +
         '<div class="cp-hint">These only say <i>where</i> your locked data is kept. They can’t unlock it.</div>' +
         '<div class="cp-err"></div><button class="cp-btn" type="submit">Continue</button></form>');
       onSubmit(function () {
