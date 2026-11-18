@@ -4,7 +4,7 @@
 Run from the repository folder:
     python3 _tools/update_app.py path/to/latest-app.html "short note about what changed"
 
-Only index.html and VERSION.txt change. private.js (the lock + sync), config.js,
+Only index.html and VERSION.txt change (add-on files in addons/ are copied separately). private.js (the lock + sync), config.js,
 the icons and the sync library stay as they are. No one's data is in any file here.
 """
 import os, re, sys, datetime
