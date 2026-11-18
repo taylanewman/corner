@@ -1,2 +1,3 @@
 Corner (private version)
 2026-11-17  First version
+2026-11-17  Color themes (Ocean, Sunset, Garden, Berry, Midnight) + Light/Dark choice in Settings
