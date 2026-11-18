@@ -13,13 +13,13 @@
   var root = null, tab = 'month', step = 1, tip = null;
 
   function blank() {
-    return { v: 1, setupDone: false, incomes: [], side: [], taxRate: 25, bills: [], debts: [], paid: {},
+    return { v: 1, setupDone: false, incomes: [], sources: [], side: [], taxRate: 25, bills: [], debts: [], paid: {},
       style: 'snowball', extra: 0, cushion: { goal: 500, saved: 0 }, showOnToday: true };
   }
   function norm(d) {
     var b = blank(); d = d && typeof d === 'object' ? d : {};
     Object.keys(b).forEach(function (k) { if (d[k] === undefined || d[k] === null) d[k] = b[k]; });
-    ['incomes', 'side', 'bills', 'debts'].forEach(function (k) { if (!Array.isArray(d[k])) d[k] = []; });
+    ['incomes', 'sources', 'side', 'bills', 'debts'].forEach(function (k) { if (!Array.isArray(d[k])) d[k] = []; });
     if (typeof d.paid !== 'object') d.paid = {};
     if (!d.cushion || typeof d.cushion !== 'object') d.cushion = b.cushion;
     return d;
@@ -167,10 +167,10 @@
     var h = '<div class="mny">';
     if (!D.setupDone) h += setupView();
     else {
-      h += '<div class="mny-tabs" role="tablist">' + [['month', 'This month'], ['bills', 'Bills & paydays'], ['debts', 'Debts'], ['taxes', 'Taxes'], ['more', 'Settings']].map(function (t) {
+      h += '<div class="mny-tabs" role="tablist">' + [['month', 'This month'], ['income', 'Income'], ['bills', 'Bills & paydays'], ['debts', 'Debts'], ['taxes', 'Taxes'], ['more', 'Settings']].map(function (t) {
         return '<button type="button" class="' + (tab === t[0] ? 'on' : '') + '" data-tab="' + t[0] + '">' + t[1] + '</button>'; }).join('') + '</div>';
       h += tipBox();
-      h += ({ month: monthView, bills: billsView, debts: debtsView, taxes: taxesView, more: moreView }[tab] || monthView)();
+      h += ({ month: monthView, income: incomeView, bills: billsView, debts: debtsView, taxes: taxesView, more: moreView }[tab] || monthView)();
     }
     h += '<div class="mny-note">Shows the math, not financial advice. Your money info stays in its own private section.</div></div>';
     var y = window.scrollY, c = document.getElementById('content'), cy = c ? c.scrollTop : 0;
@@ -227,7 +227,7 @@
   /* --- Start here --- */
   function setupView() {
     var steps = [
-      ['When do you get paid?', 'Add each paycheck that comes in on a schedule: yours, your partner’s, any regular job. Use take-home pay (after tax). Side or contract pay that comes at random times goes in Taxes later.', incomeRows],
+      ['When do you get paid?', 'Add each paycheck that comes in on a schedule: yours, your partner’s, any regular job. Use take-home pay (after tax). Side or contract pay that comes at random times goes on the Income page later.', incomeRows],
       ['What bills do you have?', 'Rent, phone, insurance, utilities, subscriptions: anything you pay regularly. You don’t need to be perfect; you can add more anytime. Card and loan payments go in the next step.', billRows],
       ['What do you owe?', 'Credit cards, loans, car, student loans, money owed to the IRS. If you don’t know the interest %, check the statement or app, or leave it blank for now.', function () { return debtRows(false); }]
     ];
@@ -295,11 +295,13 @@
     if (behind.length) h += '<div class="mny-pay late-box"><div class="mny-pay-h"><b>⏰ Not ticked off yet</b><span>from before this paycheck</span></div>' + behind.map(dueRow).join('') + '</div>';
     for (var k = 0; k < pays.length - 1; k++) {
       var p = pays[k], until = add(pays[k + 1].date, -1), list = dues(p.date, until), sum = list.reduce(function (a, o) { return a + o.amount; }, 0);
+      var sides = D.side.filter(function (x) { return x.date >= p.date && x.date <= until && num(x.amount); }), sideNet = sides.reduce(function (a, x) { return a + num(x.amount) * (1 - num(D.taxRate) / 100); }, 0);
       h += '<div class="mny-pay"><div class="mny-pay-h"><b>' + (p.none ? 'Now' : '💵 ' + nice(p.date)) + '</b>' +
         (p.none ? '' : '<span>' + p.items.map(function (x) { return esc(x.inc.who || 'Paycheck'); }).join(' + ') + ' · ' + money(p.amount) + '</span>') +
         '<span class="grow"></span><span class="mny-sm">covers until ' + short(until) + '</span></div>' +
+        sides.map(function (x) { return '<div class="mny-due incoming"><span class="mny-ck in">+</span><span class="nm">' + esc(srcName(x)) + '</span><span class="dt">' + short(x.date) + ' · after tax slice</span><b class="pos">+' + m$(Math.round(num(x.amount) * (1 - num(D.taxRate) / 100) * 100) / 100) + '</b></div>'; }).join('') +
         (list.length ? list.map(dueRow).join('') : '<div class="mny-empty">Nothing due in this stretch.</div>') +
-        (p.none ? '' : '<div class="mny-left">Left from this paycheck: <b class="' + (p.amount - sum < 0 ? 'neg' : 'pos') + '">' + money(p.amount - sum) + '</b></div>') + '</div>';
+        (p.none && !sides.length ? '' : '<div class="mny-left">Left from this stretch: <b class="' + (p.amount + sideNet - sum < 0 ? 'neg' : 'pos') + '">' + money(p.amount + sideNet - sum) + '</b></div>') + '</div>';
     }
     h += '</div>';
     h += '<div class="mny-card"><h3>Your paychecks</h3>' + incomeRows() + '</div>';
@@ -342,26 +344,52 @@
       '<div class="mny-tl axis"><span class="nm"></span><span class="tr"><em>now</em><em>' + ymNice(sim.end) + '</em></span></div></div>';
   }
 
+  function srcName(x) { var s0 = D.sources.filter(function (q) { return q.id === x.src; })[0]; return s0 ? (s0.name || 'Unnamed') : (x.from || 'Side income'); }
+  function payoutRows(list, opts) {
+    var rate = num(D.taxRate);
+    return '<div class="mny-rows">' + (list.length ? list.map(function (x) {
+      var part = num(x.amount) * rate / 100;
+      return '<div class="mny-row payout"><input type="date" data-k="side.date" data-id="' + x.id + '" value="' + esc(x.date || '') + '"' + RO() + '>' +
+        (D.sources.length ? '<select data-k="side.src" data-id="' + x.id + '"' + RO() + '>' + D.sources.map(function (q) { return '<option value="' + q.id + '"' + (x.src === q.id ? ' selected' : '') + '>' + esc(q.name || 'Unnamed') + '</option>'; }).join('') + '<option value=""' + (!x.src ? ' selected' : '') + '>Other…</option></select>' : '') +
+        ((!D.sources.length || !x.src) ? '<input data-k="side.from" data-id="' + x.id + '" placeholder="From, e.g. client name" value="' + esc(x.from || '') + '"' + RO() + '>' : '') +
+        '<span class="mny-cur"><input data-k="side.amount" data-id="' + x.id + '" inputmode="decimal" placeholder="Amount" value="' + esc(x.amount || '') + '"' + RO() + '></span>' +
+        '<span class="mny-sm">→ set aside <b>' + m$(Math.round(part * 100) / 100) + '</b></span>' +
+        '<label class="mny-chk"><input type="checkbox" data-k="side.moved" data-id="' + x.id + '"' + (x.moved ? ' checked' : '') + RO() + '> Moved to savings</label>' +
+        (API.editable ? '<button type="button" class="mny-del" data-del="side" data-id="' + x.id + '" aria-label="Remove">✕</button>' : '') + '</div>';
+    }).join('') : '<div class="mny-empty">' + (opts && opts.empty || 'No payouts logged yet.') + '</div>') +
+      (API.editable && !(opts && opts.noAdd) ? '<button type="button" class="mny-add" data-addrow="side">+ Log a payout</button>' : '') + '</div>';
+  }
+
+  /* --- Income: paychecks + side income together --- */
+  function incomeView() {
+    var t = P(today()), y = t.getFullYear(), m = t.getMonth(), from = S(new Date(y, m, 1)), to = S(new Date(y, m, dim(y, m))), yFrom = y + '-01-01';
+    var payM = allPaydays(from, to).reduce(function (a, p) { return a + p.amount; }, 0);
+    var sideM = D.side.filter(function (x) { return x.date >= from && x.date <= to; }).reduce(function (a, x) { return a + num(x.amount); }, 0);
+    var sideY = D.side.filter(function (x) { return x.date >= yFrom && x.date <= today(); }), T = taxYear(y);
+    var bySrc = {}; sideY.forEach(function (x) { var k = srcName(x); bySrc[k] = (bySrc[k] || 0) + num(x.amount); });
+    var rows = D.side.slice().sort(function (a, b) { return (b.date || '') < (a.date || '') ? -1 : 1; }).slice(0, 40);
+    return '<div class="mny-card"><h3>' + esc(monthName(y, m)) + '</h3><div class="mny-stats">' +
+        '<div><span>Paychecks</span><b>' + money(payM) + '</b></div><div><span>Side income</span><b>' + money(sideM) + '</b></div>' +
+        '<div><span>Total in</span><b>' + money(payM + sideM) + '</b></div>' +
+        '<div class="' + (T.should - T.moved > 0.5 ? 'todo' : 'ok') + '"><span>Taxes still to move (' + y + ')</span><b>' + money(Math.max(0, T.should - T.moved)) + '</b></div></div></div>' +
+      '<div class="mny-card"><h3>💵 Paychecks</h3><p class="mny-p">Regular pay that arrives on a schedule. Use take-home (after tax).</p>' + incomeRows() + '</div>' +
+      '<div class="mny-card"><h3>🧾 Side &amp; contract income</h3><p class="mny-p">Pay that arrives at random times and has <b>no tax taken out</b>. Log each payout when it lands, and the app shows the slice (' + esc(num(D.taxRate)) + '%) to move to savings for taxes. ' + i('taxrate') + '</p>' +
+        '<div class="mny-lbl" style="margin:4px 0 6px">Where it comes from</div><div class="mny-chips">' +
+        D.sources.map(function (q) { return '<span class="mny-chip"><input data-k="src.name" data-id="' + q.id + '" placeholder="Client name" value="' + esc(q.name || '') + '"' + RO() + '>' + (bySrc[q.name || 'Unnamed'] ? '<em>' + money(bySrc[q.name || 'Unnamed']) + ' this year</em>' : '') + (API.editable ? '<button type="button" class="mny-del" data-del="sources" data-id="' + q.id + '" aria-label="Remove">✕</button>' : '') + '</span>'; }).join('') +
+        (API.editable ? '<button type="button" class="mny-add" data-addrow="sources">+ Add a source</button>' : '') + '</div>' +
+        '<div class="mny-lbl" style="margin:14px 0 6px">Payouts</div>' + payoutRows(rows) + '</div>';
+  }
+
   /* --- Taxes (side / contract income) --- */
   function taxesView() {
     var yr = P(today()).getFullYear(), T = taxYear(yr), rate = num(D.taxRate);
-    var rows = D.side.slice().sort(function (a, b) { return (b.date || '') < (a.date || '') ? -1 : 1; });
-    return '<div class="mny-card"><h3>Side &amp; contract income · ' + yr + '</h3>' +
+    var rows = D.side.filter(function (x) { return !x.moved; }).sort(function (a, b) { return (b.date || '') < (a.date || '') ? -1 : 1; });
+    return '<div class="mny-card"><h3>Taxes on side income · ' + yr + '</h3>' +
       '<p class="mny-p">Taxes aren’t taken out of contract pay, so it helps to move a slice into savings (like your HYSA) each time you’re paid, then pay the IRS from there.</p>' +
       '<div class="mny-row"><span class="mny-lbl">Set aside</span><input class="mny-pct" data-k="taxRate" data-id="x" inputmode="decimal" value="' + esc(rate) + '"' + RO() + '><span>% of each payout</span>' + i('taxrate') + '</div>' +
       '<div class="mny-stats"><div><span>Earned</span><b>' + money(T.earned) + '</b></div><div><span>Should be set aside</span><b>' + money(T.should) + '</b></div><div><span>Moved to savings</span><b>' + money(T.moved) + '</b></div><div class="' + (T.should - T.moved > 0.5 ? 'todo' : 'ok') + '"><span>Still to move</span><b>' + money(Math.max(0, T.should - T.moved)) + '</b></div></div>' +
       '</div>' +
-      '<div class="mny-card"><h3>Payouts</h3><p class="mny-p">Log each payout when it lands. Tick “moved” once you’ve put the set-aside in savings.</p><div class="mny-rows">' +
-      (rows.length ? rows.map(function (x) {
-        var part = num(x.amount) * rate / 100;
-        return '<div class="mny-row side"><input type="date" data-k="side.date" data-id="' + x.id + '" value="' + esc(x.date || '') + '"' + RO() + '>' +
-          '<input data-k="side.from" data-id="' + x.id + '" placeholder="From, e.g. client name" value="' + esc(x.from || '') + '"' + RO() + '>' +
-          '<span class="mny-cur"><input data-k="side.amount" data-id="' + x.id + '" inputmode="decimal" placeholder="Amount" value="' + esc(x.amount || '') + '"' + RO() + '></span>' +
-          '<span class="mny-sm">→ set aside <b>' + m$(Math.round(part * 100) / 100) + '</b></span>' +
-          '<label class="mny-chk"><input type="checkbox" data-k="side.moved" data-id="' + x.id + '"' + (x.moved ? ' checked' : '') + RO() + '> Moved</label>' +
-          (API.editable ? '<button type="button" class="mny-del" data-del="side" data-id="' + x.id + '" aria-label="Remove">✕</button>' : '') + '</div>';
-      }).join('') : '<div class="mny-empty">No payouts logged yet.</div>') +
-      (API.editable ? '<button type="button" class="mny-add" data-addrow="side">+ Log a payout</button>' : '') + '</div></div>' +
+      '<div class="mny-card"><h3>Still to move to savings</h3><p class="mny-p">Payouts whose tax slice hasn’t gone into savings yet. Tick each one once you’ve moved it. Log new payouts on the <a href="#" data-tab="income">Income</a> page.</p>' + payoutRows(rows, { noAdd: true, empty: 'All caught up. 🎉' }) + '</div>' +
       '<div class="mny-card mny-info"><h3>Good to know</h3><ul>' +
         '<li>The IRS expects tax on side income to be paid <b>during</b> the year, usually in four quarterly payments. Paying it all at the end can mean a penalty. A tax professional can tell you if that applies to you.</li>' +
         '<li>Owe from last year? Add it on the <a href="#" data-tab="debts">Debts</a> page (e.g. “IRS 2025”) with your payment plan amount.</li>' +
@@ -398,7 +426,7 @@
 
   /* ---------------- input handling ---------------- */
   function findIn(list, id) { return D[list].filter(function (x) { return x.id === id; })[0]; }
-  var LIST = { inc: 'incomes', bill: 'bills', debt: 'debts', side: 'side' };
+  var LIST = { inc: 'incomes', bill: 'bills', debt: 'debts', side: 'side', src: 'sources' };
   function onInput(e) {
     var el = e.target, k = el.getAttribute && el.getAttribute('data-k'); if (!k || !API.editable) return;
     var id = el.getAttribute('data-id'), v = el.type === 'checkbox' ? el.checked : el.value;
@@ -426,7 +454,8 @@
       var L = t.getAttribute('data-addrow'), row = { id: uid() };
       if (L === 'incomes') { row.freq = 'biweekly'; row.who = D.incomes.length ? '' : 'My paycheck'; }
       if (L === 'bills') row.freq = 'monthly';
-      if (L === 'side') row.date = today();
+      if (L === 'side') { row.date = today(); if (D.sources.length) row.src = D.sources[0].id; }
+      if (L === 'sources') row.name = '';
       if (L === 'bills' || L === 'debts') row.added = today();
       D[L].push(row); save(); draw();
       var f = root.querySelector('[data-id="' + row.id + '"]:not([type=date])'); if (f) f.focus(); return;
@@ -462,7 +491,7 @@
     '.mny input:not([type=checkbox]),.mny select{border:1px solid var(--line-2);background:var(--surface);color:var(--text);border-radius:9px;padding:8px 10px;font-size:14px;min-width:0;font-family:inherit}' +
     '.mny input:focus,.mny select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}' +
     '.mny-row.inc>input:first-child,.mny-row.bill>input:first-child,.mny-row.debt>input:first-child{flex:1 1 180px}' +
-    '.mny-row.side>input:nth-child(2){flex:1 1 160px}.mny-notes{flex:1 1 200px}' +
+    '.mny-row.payout>input:nth-child(2){flex:1 1 160px}.mny-notes{flex:1 1 200px}' +
     '.mny-cur{position:relative;display:inline-flex}.mny-cur::before{content:"$";position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:14px;pointer-events:none}.mny-cur input{padding-left:20px!important;width:110px}' +
     '.mny-sm{font-size:12.5px;color:var(--muted);display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}.mny-sm input{width:64px}.mny-sm input[type=date]{width:auto}' +
     '.mny-pct{width:64px}.mny-lbl{font-size:13px;font-weight:600;min-width:120px;display:inline-flex;align-items:center;gap:4px}' +
@@ -511,6 +540,9 @@
     '.mny-stats>div{background:var(--surface-2);border-radius:12px;padding:10px 12px}.mny-stats span{display:block;font-size:12px;color:var(--muted)}.mny-stats b{font-size:18px}' +
     '.mny-stats .todo b{color:var(--accent)}.mny-stats .ok b{color:#16a34a}' +
     '.mny-info ul{margin:0;padding-left:18px;font-size:13.5px;line-height:1.55;color:var(--muted)}.mny-info li+li{margin-top:6px}' +
+    '.mny-chips{display:flex;flex-wrap:wrap;gap:8px;align-items:center}' +
+    '.mny-chip{display:inline-flex;align-items:center;gap:6px;background:var(--surface-2);border-radius:12px;padding:4px 4px 4px 4px}.mny-chip input{width:150px}.mny-chip em{font-style:normal;font-size:12px;color:var(--muted)}' +
+    '.mny-ck.in{background:color-mix(in srgb,#22c55e 15%,transparent);border-color:#22c55e;color:#16a34a}' +
     '.mny-note{font-size:12px;color:var(--faint);text-align:center}' +
     '.mny-payday{font-size:13px;background:color-mix(in srgb,#22c55e 12%,transparent);border-radius:9px;padding:6px 9px;margin-bottom:6px}' +
     '.addon-today .mny-due{font-size:13.5px}' +
