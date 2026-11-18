@@ -6,3 +6,4 @@ Corner (private version)
 2026-11-17  Seasonal themes (heading fonts) + Add-ons switch with a Money placeholder
 2026-11-18  Finished on date for done tasks
 2026-11-18  Money add-on v1: setup, this month, bills by paycheck, debts plan, taxes; money due on Today
+2026-11-18  Holiday theme; Money: Savings goals, '1099 Tax %' page name

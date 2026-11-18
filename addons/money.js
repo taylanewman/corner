@@ -13,13 +13,13 @@
   var root = null, tab = 'month', step = 1, tip = null;
 
   function blank() {
-    return { v: 1, setupDone: false, incomes: [], sources: [], side: [], taxRate: 25, bills: [], debts: [], paid: {},
+    return { v: 1, setupDone: false, incomes: [], sources: [], side: [], goals: [], taxRate: 25, bills: [], debts: [], paid: {},
       style: 'snowball', extra: 0, cushion: { goal: 500, saved: 0 }, showOnToday: true };
   }
   function norm(d) {
     var b = blank(); d = d && typeof d === 'object' ? d : {};
     Object.keys(b).forEach(function (k) { if (d[k] === undefined || d[k] === null) d[k] = b[k]; });
-    ['incomes', 'sources', 'side', 'bills', 'debts'].forEach(function (k) { if (!Array.isArray(d[k])) d[k] = []; });
+    ['incomes', 'sources', 'side', 'goals', 'bills', 'debts'].forEach(function (k) { if (!Array.isArray(d[k])) d[k] = []; });
     if (typeof d.paid !== 'object') d.paid = {};
     if (!d.cushion || typeof d.cushion !== 'object') d.cushion = b.cushion;
     return d;
@@ -167,10 +167,10 @@
     var h = '<div class="mny">';
     if (!D.setupDone) h += setupView();
     else {
-      h += '<div class="mny-tabs" role="tablist">' + [['month', 'This month'], ['income', 'Income'], ['bills', 'Bills & paydays'], ['debts', 'Debts'], ['taxes', 'Taxes'], ['more', 'Settings']].map(function (t) {
+      h += '<div class="mny-tabs" role="tablist">' + [['month', 'This month'], ['income', 'Income'], ['bills', 'Bills & paydays'], ['debts', 'Debts'], ['savings', 'Savings'], ['taxes', '1099 Tax %'], ['more', 'Settings']].map(function (t) {
         return '<button type="button" class="' + (tab === t[0] ? 'on' : '') + '" data-tab="' + t[0] + '">' + t[1] + '</button>'; }).join('') + '</div>';
       h += tipBox();
-      h += ({ month: monthView, income: incomeView, bills: billsView, debts: debtsView, taxes: taxesView, more: moreView }[tab] || monthView)();
+      h += ({ month: monthView, income: incomeView, bills: billsView, debts: debtsView, savings: savingsView, taxes: taxesView, more: moreView }[tab] || monthView)();
     }
     h += '<div class="mny-note">Shows the math, not financial advice. Your money info stays in its own private section.</div></div>';
     var y = window.scrollY, c = document.getElementById('content'), cy = c ? c.scrollTop : 0;
@@ -247,6 +247,8 @@
     var ord = order(D.style), focus = ord[0], c = D.cushion, need = Math.max(0, num(c.goal) - num(c.saved));
     var ideas = [];
     if (s.left > 0 && need > 0) ideas.push('Put <b>' + money(Math.min(need, Math.max(25, Math.round(s.left * 0.25 / 5) * 5))) + '</b> toward your cushion (now ' + money(num(c.saved)) + ' of ' + money(num(c.goal)) + ')');
+    var g0 = D.goals.filter(function (g) { return num(g.saved) < num(g.target); })[0];
+    if (s.left > 0 && g0 && !need) ideas.push('Add to <b>' + esc(g0.name || 'your savings goal') + '</b> (' + money(num(g0.saved)) + ' of ' + money(num(g0.target)) + ')');
     if (s.left > 0 && focus) ideas.push('Pay extra on <b>' + esc(focus.name || 'your focus debt') + '</b> (your focus debt)');
     var t = today(), nexts = dues(add(t, -5), add(t, 31)).filter(needsTick).slice(0, 4);
     return '<div class="mny-card"><h3>' + esc(monthName(s.y, s.m)) + '</h3>' +
@@ -396,6 +398,32 @@
       '</ul></div>';
   }
 
+  /* --- Savings goals --- */
+  function reachBy(left, monthly) {
+    if (left <= 0) return 'Reached! 🎉'; if (!monthly) return 'Add a monthly amount to see when';
+    var n = Math.ceil(left / monthly), d = P(today()); d.setMonth(d.getMonth() + n);
+    return 'At ' + money(monthly) + '/mo: <b>' + d.toLocaleDateString(undefined, { month: 'short', year: 'numeric' }) + '</b> (' + spanWords(n) + ')';
+  }
+  function goalCard(g, isCushion) {
+    var saved = num(isCushion ? D.cushion.saved : g.saved), target = num(isCushion ? D.cushion.goal : g.target), monthly = num(isCushion ? D.cushion.monthly : g.monthly), id = isCushion ? 'cushion' : g.id;
+    var k = isCushion ? 'cush' : 'goal';
+    return '<div class="mny-card mny-goal">' +
+      '<div class="mny-goal-h">' + ring(saved, target) + '<div class="mny-goal-t">' +
+        (isCushion ? '<h3>🛟 Cushion ' + i('cushion') + '</h3>' : '<input class="mny-gname" data-k="goal.name" data-id="' + id + '" placeholder="Goal, e.g. Trip, New laptop" value="' + esc(g.name || '') + '"' + RO() + '>') +
+        '<div class="mny-sm">' + money(saved) + ' of ' + money(target) + '</div><div class="mny-sm">' + reachBy(target - saved, monthly) + '</div></div>' +
+        (!isCushion && API.editable ? '<button type="button" class="mny-del" data-del="goals" data-id="' + id + '" aria-label="Remove goal">✕</button>' : '') + '</div>' +
+      '<div class="mny-row"><label class="mny-sm">Goal <span class="mny-cur"><input data-k="' + k + '.target" data-id="' + id + '" inputmode="decimal" value="' + esc(target || '') + '"' + RO() + '></span></label>' +
+        '<label class="mny-sm">Each month <span class="mny-cur"><input data-k="' + k + '.monthly" data-id="' + id + '" inputmode="decimal" placeholder="0" value="' + esc(monthly || '') + '"' + RO() + '></span></label></div>' +
+      (API.editable ? '<div class="mny-row"><span class="mny-cur"><input class="mny-gadd" data-for="' + id + '" inputmode="decimal" placeholder="Amount"></span><button type="button" class="btn" data-gadd="' + id + '" data-dir="1">Add</button><button type="button" class="btn ghost" data-gadd="' + id + '" data-dir="-1">Took out</button></div>' : '') +
+      '</div>';
+  }
+  function savingsView() {
+    var total = num(D.cushion.saved) + D.goals.reduce(function (a, g) { return a + num(g.saved); }, 0);
+    return '<div class="mny-card"><h3>Savings</h3><p class="mny-p">Start with a small cushion for surprises, then add goals for things you’re saving up for. Tap <b>Add</b> each time you put money aside. Total saved: <b>' + money(total) + '</b></p></div>' +
+      '<div class="mny-goals">' + goalCard(null, true) + D.goals.map(function (g) { return goalCard(g, false); }).join('') + '</div>' +
+      (API.editable ? '<button type="button" class="mny-add" data-addrow="goals">+ Add a savings goal</button>' : '');
+  }
+
   /* --- Settings --- */
   function moreView() {
     return '<div class="mny-card"><h3>Money settings</h3>' +
@@ -426,14 +454,15 @@
 
   /* ---------------- input handling ---------------- */
   function findIn(list, id) { return D[list].filter(function (x) { return x.id === id; })[0]; }
-  var LIST = { inc: 'incomes', bill: 'bills', debt: 'debts', side: 'side', src: 'sources' };
+  var LIST = { inc: 'incomes', bill: 'bills', debt: 'debts', side: 'side', src: 'sources', goal: 'goals' };
   function onInput(e) {
     var el = e.target, k = el.getAttribute && el.getAttribute('data-k'); if (!k || !API.editable) return;
     var id = el.getAttribute('data-id'), v = el.type === 'checkbox' ? el.checked : el.value;
     if (k === 'extra') D.extra = num(v);
     else if (k === 'taxRate') D.taxRate = Math.max(0, Math.min(60, num(v)));
     else if (k === 'showOnToday') D.showOnToday = !!v;
-    else if (k === 'cgoal') D.cushion.goal = num(v);
+    else if (k === 'cgoal' || k === 'cush.target') D.cushion.goal = num(v);
+    else if (k === 'cush.monthly') D.cushion.monthly = num(v);
     else { var parts = k.split('.'), item = findIn(LIST[parts[0]], id); if (!item) return; item[parts[1]] = v; }
     save();
     /* redraw on change (not every keystroke) so numbers and plans update */
@@ -456,6 +485,7 @@
       if (L === 'bills') row.freq = 'monthly';
       if (L === 'side') { row.date = today(); if (D.sources.length) row.src = D.sources[0].id; }
       if (L === 'sources') row.name = '';
+      if (L === 'goals') { row.name = ''; row.saved = 0; }
       if (L === 'bills' || L === 'debts') row.added = today();
       D[L].push(row); save(); draw();
       var f = root.querySelector('[data-id="' + row.id + '"]:not([type=date])'); if (f) f.focus(); return;
@@ -468,6 +498,13 @@
     }
     if ((t = e.target.closest('[data-paid]'))) { togglePaid(t.getAttribute('data-paid')); return; }
     if ((t = e.target.closest('[data-style]'))) { D.style = t.getAttribute('data-style'); save(); draw(); return; }
+    if ((t = e.target.closest('[data-gadd]'))) {
+      var gid = t.getAttribute('data-gadd'), gi = root.querySelector('.mny-gadd[data-for="' + gid + '"]'), ga = num(gi && gi.value) * (+t.getAttribute('data-dir'));
+      if (!ga) { gi && gi.focus(); return; }
+      if (gid === 'cushion') D.cushion.saved = Math.max(0, num(D.cushion.saved) + ga);
+      else { var g = findIn('goals', gid); if (!g) return; g.saved = Math.max(0, num(g.saved) + ga); }
+      save(); draw(); API.toast(ga > 0 ? 'Added ' + money(ga) + ' 🎉' : 'Took out ' + money(-ga)); return;
+    }
     if ((t = e.target.closest('[data-cushion]'))) {
       var inp = root.querySelector('#mny-cadd'), amt = num(inp && inp.value); if (!amt) { inp && inp.focus(); return; }
       D.cushion.saved = Math.max(0, num(D.cushion.saved) + (t.getAttribute('data-cushion') === 'add' ? amt : -amt)); save(); draw(); return;
@@ -543,6 +580,9 @@
     '.mny-chips{display:flex;flex-wrap:wrap;gap:8px;align-items:center}' +
     '.mny-chip{display:inline-flex;align-items:center;gap:6px;background:var(--surface-2);border-radius:12px;padding:4px 4px 4px 4px}.mny-chip input{width:150px}.mny-chip em{font-style:normal;font-size:12px;color:var(--muted)}' +
     '.mny-ck.in{background:color-mix(in srgb,#22c55e 15%,transparent);border-color:#22c55e;color:#16a34a}' +
+    '.mny-goals{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}' +
+    '.mny-goal-h{display:flex;align-items:center;gap:14px;margin-bottom:10px}.mny-goal-h .mny-ring{margin:0;flex:none}.mny-goal-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}.mny-goal-t h3{margin:0}' +
+    '.mny-gname{font-weight:700;font-size:15px!important;width:100%}.mny-goal .mny-row+.mny-row{margin-top:8px}' +
     '.mny-note{font-size:12px;color:var(--faint);text-align:center}' +
     '.mny-payday{font-size:13px;background:color-mix(in srgb,#22c55e 12%,transparent);border-radius:9px;padding:6px 9px;margin-bottom:6px}' +
     '.addon-today .mny-due{font-size:13.5px}' +
