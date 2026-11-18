@@ -13,23 +13,25 @@
   var root = null, tab = 'month', step = 1, tip = null;
 
   function blank() {
-    return { v: 1, setupDone: false, incomes: [], sources: [], side: [], goals: [], taxRate: 25, bills: [], debts: [], paid: {},
+    return { v: 1, setupDone: false, incomes: [], sources: [], side: [], goals: [], events: [], taxRate: 25, bills: [], debts: [], paid: {},
       style: 'snowball', extra: 0, cushion: { goal: 500, saved: 0 }, showOnToday: true };
   }
   function norm(d) {
     var b = blank(); d = d && typeof d === 'object' ? d : {};
     Object.keys(b).forEach(function (k) { if (d[k] === undefined || d[k] === null) d[k] = b[k]; });
-    ['incomes', 'sources', 'side', 'goals', 'bills', 'debts'].forEach(function (k) { if (!Array.isArray(d[k])) d[k] = []; });
+    ['incomes', 'sources', 'side', 'goals', 'events', 'bills', 'debts'].forEach(function (k) { if (!Array.isArray(d[k])) d[k] = []; });
     if (typeof d.paid !== 'object') d.paid = {};
     if (!d.cushion || typeof d.cushion !== 'object') d.cushion = b.cushion;
     return d;
   }
   function uid() { return Math.random().toString(36).slice(2, 10); }
+  var editsAt = 0, lastSent = '';
   function save() {
     if (!API || !API.editable) return;
-    dirty = true; clearTimeout(saveT);
+    dirty = true; editsAt = Date.now(); clearTimeout(saveT);
     saveT = setTimeout(function () {
-      API.save(D).then(function () { dirty = false; }, function () { dirty = false; API.toast('Couldn’t save your money changes. They’ll retry when you edit again.'); });
+      saveT = null; var mark = editsAt; lastSent = JSON.stringify(D);
+      API.save(D).then(function () { if (!saveT && editsAt === mark) dirty = false; }, function () { if (!saveT && editsAt === mark) dirty = false; API.toast('Couldn’t save your money changes. They’ll retry when you edit again.'); });
     }, 350);
   }
   function num(v) { var n = parseFloat(String(v).replace(/[$,\s]/g, '')); return isFinite(n) ? n : 0; }
@@ -174,10 +176,12 @@
     }
     h += '<div class="mny-note">Shows the math, not financial advice. Your money info stays in its own private section.</div></div>';
     var y = window.scrollY, c = document.getElementById('content'), cy = c ? c.scrollTop : 0;
-    var act = document.activeElement, actKey = act && root.contains(act) ? act.getAttribute('data-k') + '|' + act.getAttribute('data-id') : null;
+    var act = document.activeElement, actK = act && root.contains(act) ? act.getAttribute('data-k') : null, actId = actK ? act.getAttribute('data-id') : null;
+    var selS = null, selE = null; try { if (actK && act.selectionStart != null) { selS = act.selectionStart; selE = act.selectionEnd; } } catch (_) {}
     root.innerHTML = h;
     if (c) c.scrollTop = cy; window.scrollTo(0, y);
-    if (actKey) { var back = root.querySelector('[data-k="' + actKey.split('|')[0] + '"][data-id="' + actKey.split('|')[1] + '"]'); if (back) try { back.focus(); } catch (_) {} }
+    if (actK) { var back = [].filter.call(root.querySelectorAll('[data-k]'), function (x) { return x.getAttribute('data-k') === actK && x.getAttribute('data-id') === actId; })[0];
+      if (back) try { back.focus(); if (selS != null && back.setSelectionRange) back.setSelectionRange(selS, selE); } catch (_) {} }
   }
 
   /* --- row editors (spreadsheet-style, saves as you type) --- */
@@ -417,11 +421,39 @@
       (API.editable ? '<div class="mny-row"><span class="mny-cur"><input class="mny-gadd" data-for="' + id + '" inputmode="decimal" placeholder="Amount"></span><button type="button" class="btn" data-gadd="' + id + '" data-dir="1">Add</button><button type="button" class="btn ghost" data-gadd="' + id + '" data-dir="-1">Took out</button></div>' : '') +
       '</div>';
   }
+  /* big events (e.g. a wedding): a date, a list of costs, and money set aside for it */
+  function monthsUntil(date) { if (!date) return 0; var a = P(today()), b = P(date); return Math.max(0, (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth())); }
+  function eventCard(ev) {
+    var items = ev.items || [], total = items.reduce(function (a, x) { return a + num(x.cost); }, 0);
+    var paid = items.filter(function (x) { return x.paid; }).reduce(function (a, x) { return a + num(x.cost); }, 0), pot = num(ev.saved);
+    var need = Math.max(0, total - paid - pot), mo = monthsUntil(ev.date), per = need > 0 ? (mo > 0 ? need / mo : need) : 0;
+    var ready = total > 0 ? Math.min(1, (paid + pot) / total) : 0;
+    return '<div class="mny-card mny-event"><div class="mny-goal-h">' + ring(paid + pot, total) +
+      '<div class="mny-goal-t"><input class="mny-gname" data-k="ev.name" data-id="' + ev.id + '" placeholder="Event, e.g. Our wedding" value="' + esc(ev.name || '') + '"' + RO() + '>' +
+        '<label class="mny-sm">When <input type="date" data-k="ev.date" data-id="' + ev.id + '" value="' + esc(ev.date || '') + '"' + RO() + '>' + (ev.date ? ' · ' + (mo > 0 ? spanWords(mo) + ' away' : 'this month') : '') + '</label></div>' +
+        (API.editable ? '<button type="button" class="mny-del" data-del="events" data-id="' + ev.id + '" aria-label="Remove event">✕</button>' : '') + '</div>' +
+      '<div class="mny-stats"><div><span>Total cost</span><b>' + money(total) + '</b></div><div><span>Already paid</span><b>' + money(paid) + '</b></div><div><span>Saved for it</span><b>' + money(pot) + '</b></div>' +
+        '<div class="' + (need > 0 ? 'todo' : 'ok') + '"><span>Still need</span><b>' + money(need) + '</b></div></div>' +
+      (need > 0 && ev.date ? '<p class="mny-plan">👉 Save about <b>' + money(Math.ceil(per)) + ' a month</b> to be ready by ' + esc(P(ev.date).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })) + '.</p>' : (total > 0 && need <= 0 ? '<p class="mny-plan">🎉 Fully covered!</p>' : '')) +
+      '<div class="mny-lbl" style="margin:12px 0 6px">What it costs</div><div class="mny-rows">' +
+      (items.length ? items.map(function (x) {
+        var key = ev.id + '|' + x.id;
+        return '<div class="mny-row evitem' + (x.paid ? ' done' : '') + '"><input data-k="evi.name" data-id="' + key + '" placeholder="e.g. Venue, Photographer, Dress" value="' + esc(x.name || '') + '"' + RO() + '>' +
+          '<span class="mny-cur"><input data-k="evi.cost" data-id="' + key + '" inputmode="decimal" placeholder="Cost" value="' + esc(x.cost || '') + '"' + RO() + '></span>' +
+          '<label class="mny-chk"><input type="checkbox" data-k="evi.paid" data-id="' + key + '"' + (x.paid ? ' checked' : '') + RO() + '> Paid</label>' +
+          (API.editable ? '<button type="button" class="mny-del" data-delitem="' + key + '" aria-label="Remove">✕</button>' : '') + '</div>';
+      }).join('') : '<div class="mny-empty">Add what it’ll cost: venue, food, outfits, travel… Rough guesses are fine.</div>') +
+      (API.editable ? '<button type="button" class="mny-add" data-additem="' + ev.id + '">+ Add a cost</button>' : '') + '</div>' +
+      (API.editable ? '<div class="mny-row" style="margin-top:12px"><span class="mny-sm">Money set aside for it:</span><span class="mny-cur"><input class="mny-gadd" data-for="ev:' + ev.id + '" inputmode="decimal" placeholder="Amount"></span><button type="button" class="btn" data-gadd="ev:' + ev.id + '" data-dir="1">Add</button><button type="button" class="btn ghost" data-gadd="ev:' + ev.id + '" data-dir="-1">Took out</button></div>' : '') +
+      '</div>';
+  }
   function savingsView() {
-    var total = num(D.cushion.saved) + D.goals.reduce(function (a, g) { return a + num(g.saved); }, 0);
+    var total = num(D.cushion.saved) + D.goals.reduce(function (a, g) { return a + num(g.saved); }, 0) + D.events.reduce(function (a, ev) { return a + num(ev.saved); }, 0);
     return '<div class="mny-card"><h3>Savings</h3><p class="mny-p">Start with a small cushion for surprises, then add goals for things you’re saving up for. Tap <b>Add</b> each time you put money aside. Total saved: <b>' + money(total) + '</b></p></div>' +
       '<div class="mny-goals">' + goalCard(null, true) + D.goals.map(function (g) { return goalCard(g, false); }).join('') + '</div>' +
-      (API.editable ? '<button type="button" class="mny-add" data-addrow="goals">+ Add a savings goal</button>' : '');
+      (API.editable ? '<button type="button" class="mny-add" data-addrow="goals">+ Add a savings goal</button>' : '') +
+      (D.events.length ? '<div class="mny-sec-h">🎉 Big events</div>' + D.events.map(eventCard).join('') : '') +
+      (API.editable ? '<button type="button" class="mny-add soft" data-addrow="events">+ Plan a big event (wedding, move, baby…)</button>' : '');
   }
 
   /* --- Settings --- */
@@ -463,6 +495,8 @@
     else if (k === 'showOnToday') D.showOnToday = !!v;
     else if (k === 'cgoal' || k === 'cush.target') D.cushion.goal = num(v);
     else if (k === 'cush.monthly') D.cushion.monthly = num(v);
+    else if (k.indexOf('ev.') === 0) { var ev0 = findIn('events', id); if (!ev0) return; ev0[k.slice(3)] = v; }
+    else if (k.indexOf('evi.') === 0) { var ids = id.split('|'), ev1 = findIn('events', ids[0]); if (!ev1) return; var it0 = (ev1.items || []).filter(function (x) { return x.id === ids[1]; })[0]; if (!it0) return; it0[k.slice(4)] = v; }
     else { var parts = k.split('.'), item = findIn(LIST[parts[0]], id); if (!item) return; item[parts[1]] = v; }
     save();
     /* redraw on change (not every keystroke) so numbers and plans update */
@@ -486,13 +520,24 @@
       if (L === 'side') { row.date = today(); if (D.sources.length) row.src = D.sources[0].id; }
       if (L === 'sources') row.name = '';
       if (L === 'goals') { row.name = ''; row.saved = 0; }
+      if (L === 'events') { row.name = ''; row.saved = 0; row.items = []; }
       if (L === 'bills' || L === 'debts') row.added = today();
       D[L].push(row); save(); draw();
       var f = root.querySelector('[data-id="' + row.id + '"]:not([type=date])'); if (f) f.focus(); return;
     }
+    if ((t = e.target.closest('[data-additem]'))) {
+      var eva = findIn('events', t.getAttribute('data-additem')); if (!eva) return; eva.items = eva.items || []; var ni = { id: uid(), name: '', cost: '', paid: false }; eva.items.push(ni); save(); draw();
+      var nf = root.querySelector('[data-id="' + eva.id + '|' + ni.id + '"]'); if (nf) nf.focus(); return;
+    }
+    if ((t = e.target.closest('[data-delitem]'))) {
+      var pr = t.getAttribute('data-delitem').split('|'), evd = findIn('events', pr[0]); if (!evd) return;
+      evd.items = (evd.items || []).filter(function (x) { return x.id !== pr[1]; }); save(); draw(); return;
+    }
     if ((t = e.target.closest('[data-del]'))) {
       var L2 = t.getAttribute('data-del'), id = t.getAttribute('data-id'), it = findIn(L2, id), ix = D[L2].indexOf(it);
-      if (ix < 0) return; D[L2].splice(ix, 1); save(); draw();
+      if (ix < 0) return;
+      if (L2 === 'events' && ((it.items || []).length || num(it.saved)) && !window.confirm('Remove “' + (it.name || 'this event') + '” and its whole cost list?')) return;
+      D[L2].splice(ix, 1); save(); draw();
       API.toast('Removed. Changed your mind? Add it again.');
       return;
     }
@@ -502,6 +547,7 @@
       var gid = t.getAttribute('data-gadd'), gi = root.querySelector('.mny-gadd[data-for="' + gid + '"]'), ga = num(gi && gi.value) * (+t.getAttribute('data-dir'));
       if (!ga) { gi && gi.focus(); return; }
       if (gid === 'cushion') D.cushion.saved = Math.max(0, num(D.cushion.saved) + ga);
+      else if (gid.indexOf('ev:') === 0) { var evg = findIn('events', gid.slice(3)); if (!evg) return; evg.saved = Math.max(0, num(evg.saved) + ga); }
       else { var g = findIn('goals', gid); if (!g) return; g.saved = Math.max(0, num(g.saved) + ga); }
       save(); draw(); API.toast(ga > 0 ? 'Added ' + money(ga) + ' 🎉' : 'Took out ' + money(-ga)); return;
     }
@@ -583,6 +629,10 @@
     '.mny-goals{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}' +
     '.mny-goal-h{display:flex;align-items:center;gap:14px;margin-bottom:10px}.mny-goal-h .mny-ring{margin:0;flex:none}.mny-goal-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}.mny-goal-t h3{margin:0}' +
     '.mny-gname{font-weight:700;font-size:15px!important;width:100%}.mny-goal .mny-row+.mny-row{margin-top:8px}' +
+    '.mny-sec-h{font-family:var(--font-head);font-weight:700;font-size:16px;margin:10px 0 0}' +
+    '.mny-event .mny-stats{margin-top:4px}.mny-plan{margin:10px 0 0;background:var(--accent-soft);border-radius:10px;padding:8px 11px;font-size:14px}' +
+    '.mny-row.evitem>input:first-child{flex:1 1 200px}.mny-row.evitem.done>input:first-child{text-decoration:line-through;opacity:.6}' +
+    '.mny-add.soft{border-style:dotted;color:var(--muted)}' +
     '.mny-note{font-size:12px;color:var(--faint);text-align:center}' +
     '.mny-payday{font-size:13px;background:color-mix(in srgb,#22c55e 12%,transparent);border-radius:9px;padding:6px 9px;margin-bottom:6px}' +
     '.addon-today .mny-due{font-size:13.5px}' +
@@ -599,7 +649,7 @@
         if (!d && (D.incomes.length || D.bills.length)) D.setupDone = true;
         draw(); refreshToday();
       }, function () { D = norm(null); loaded = true; draw(); });
-      api.watch(function (d) { if (!d || dirty) return; D = norm(d); loaded = true; if (!root || !root.contains(document.activeElement)) draw(); refreshToday(); });
+      api.watch(function (d) { if (!d || dirty || saveT || Date.now() - editsAt < 2000 || JSON.stringify(d) === lastSent) return; D = norm(d); loaded = true; if (!root || !root.contains(document.activeElement)) draw(); refreshToday(); });
     },
     mount: function (el, api) {
       API = API || api; ensureCss(); root = el;
