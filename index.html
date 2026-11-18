@@ -2684,6 +2684,49 @@ root.addEventListener('submit',function(e){
   var st=f.getAttribute('data-status');addTask(ui.pid,v,st);commit();
   var again=document.querySelector('.quick[data-status="'+st+'"] input');if(again)again.focus();
 });
+/* ---------- secret mass-add: paste a list (or Shift+Enter) in any "+ Add" box ---------- */
+function cleanLine(l){return l.replace(/^\s*(?:[-*•·◦▪–—>]|\d+[.)]|\[[ xX]?\]|☐|☑|✓|✔)\s*/,'').replace(/^\s*(?:[-*•]|\[[ xX]?\])\s*/,'').trim();}
+function bulkLines(txt){return String(txt||'').split(/\r?\n/).map(cleanLine).filter(function(l){return l.length>0;});}
+function openBulkAdd(txt,ctx){
+  if(!editable)return;
+  var pidDef=ctx.pid||(S.projects[0]&&S.projects[0].id);
+  var d=openModal('<div class="dlg-h"><h2>Add several tasks</h2><button class="icon-btn" data-m="close" aria-label="Close">'+ico.x+'</button></div>'+
+    '<p class="hint" style="margin:-4px 0 10px">One task per line. Bullets and numbers are cleaned up for you. Start a line with <b>!</b> to make it high priority.</p>'+
+    '<div class="fld"><textarea id="bk-ta" rows="10" placeholder="Paste or type your list here">'+esc(bulkLines(txt).join('\n'))+'</textarea></div>'+
+    '<div class="grid" style="margin-top:10px"><label class="fld">Web<select id="bk-p" data-newweb>'+treeOrder().map(function(n){return '<option value="'+n.p.id+'"'+(n.p.id===pidDef?' selected':'')+'>'+esc(fullName(n.p))+'</option>';}).join('')+'<option value="__new">＋ Create a new web…</option></select></label>'+
+    (ctx.status?'':'<label class="cb" style="align-self:end;padding-bottom:8px"><input type="checkbox" id="bk-today"'+(ctx.today?' checked':'')+'> Pin them to Today</label>')+'</div>'+
+    '<div class="dlg-f"><span class="hint" id="bk-n"></span><span class="grow"></span><button class="btn ghost" data-m="close">Cancel</button><button class="btn primary" data-m="bk-add">Add tasks</button></div>');
+  var ta=d.querySelector('#bk-ta'),nEl=d.querySelector('#bk-n'),btn=d.querySelector('[data-m="bk-add"]');
+  function count(){var n=bulkLines(ta.value).length;nEl.textContent=n?n+' task'+(n===1?'':'s'):'';btn.textContent=n?'Add '+n+' task'+(n===1?'':'s'):'Add tasks';btn.disabled=!n;}
+  ta.addEventListener('input',count);count();setTimeout(function(){ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);},30);
+  d.addEventListener('click',function(e){
+    var b=e.target.closest('[data-m]');if(!b)return;var m=b.getAttribute('data-m');
+    if(m==='close')closeModal();
+    else if(m==='bk-add'){
+      var lines=bulkLines(ta.value),pid=d.querySelector('#bk-p').value;if(!lines.length)return;
+      if(pid==='__new'||!proj(pid)){d.querySelector('#bk-p').focus();return;}
+      var pin=ctx.status?false:!!(d.querySelector('#bk-today')&&d.querySelector('#bk-today').checked);
+      lines.forEach(function(l){var hi=/^!+\s*/.test(l),title=l.replace(/^!+\s*/,'');if(!title)return;var t=addTask(pid,title,ctx.status||'todo');if(hi)t.priority='high';if(pin)t.today=TODAY;});
+      logAct('Added '+lines.length+' tasks at once to '+(proj(pid)?proj(pid).name:'a web'));
+      closeModal();commit();toast('Added '+lines.length+' task'+(lines.length===1?'':'s')+' to '+(proj(pid)?proj(pid).name:'your web'));
+    }
+  });
+}
+function bulkCtx(inp){
+  var fm=inp&&inp.closest&&inp.closest('form');if(!fm)return null;
+  if(fm.id==='today-add')return {pid:fm.p&&fm.p.value!=='__new'?fm.p.value:'',today:true};
+  if(fm.classList.contains('quick'))return {pid:ui.pid,status:fm.getAttribute('data-status')};
+  return null;
+}
+document.addEventListener('paste',function(e){
+  var inp=e.target;if(!inp||inp.tagName!=='INPUT')return;var ctx=bulkCtx(inp);if(!ctx||!editable)return;
+  var txt=(e.clipboardData||window.clipboardData).getData('text');if(bulkLines(txt).length<2)return;
+  e.preventDefault();inp.value='';openBulkAdd(txt,ctx);
+});
+document.addEventListener('keydown',function(e){
+  if(e.key!=='Enter'||!e.shiftKey)return;var inp=e.target;if(!inp||inp.tagName!=='INPUT')return;var ctx=bulkCtx(inp);if(!ctx||!editable)return;
+  e.preventDefault();var v=inp.value;inp.value='';openBulkAdd(v,ctx);
+},true);
 /* drag & drop */
 var dragId=null,line=document.createElement('div');line.className='drop-line';
 function clearDrop(){document.querySelectorAll('.col-body.over').forEach(function(x){x.classList.remove('over');});if(line.parentNode)line.parentNode.removeChild(line);}
