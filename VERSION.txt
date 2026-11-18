@@ -8,3 +8,4 @@ Corner (private version)
 2026-11-18  Money add-on v1: setup, this month, bills by paycheck, debts plan, taxes; money due on Today
 2026-11-18  Holiday theme; Money: Savings goals, '1099 Tax %' page name
 2026-11-18  Mass-add tasks: paste a list or Shift+Enter in any + Add box
+2026-11-18  + Bunch button: add a list of tasks one by one

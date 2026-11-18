@@ -88,6 +88,8 @@
 .th-opt .th-fn{font-size:13px}
 .addon-row{align-items:flex-start;gap:10px}
 .fld[hidden]{display:none!important}
+.bunch-btn{padding:0 12px}
+.bunch-bar{display:flex;align-items:center;gap:10px;margin:-6px 0 12px;padding:8px 12px;border-radius:11px;background:var(--accent-soft);font-size:13.5px}
 .addon-row .ad-name{display:inline-flex!important;align-items:center;gap:6px}
 .addon-row .ad-name svg{width:16px;height:16px;flex:none}
 .addon-root{max-width:1000px}
@@ -1118,7 +1120,7 @@ function topbar(){
       (editable?'<button class="icon-btn" data-act="edit-project" data-id="'+p.id+'" title="Edit project" aria-label="Edit project">'+ico.edit+'</button>':'');
   }
   var search=(['overview','map','today','calendar','meeting','review'].indexOf(ui.view)>=0||ui.view.indexOf('addon:')===0)?'':'<label class="search">'+ico.search+'<input id="q" type="search" placeholder="Search tasks" value="'+esc(ui.q)+'" autocomplete="off"></label>';
-  var add=(editable&&ui.view!=='review'&&ui.view!=='meeting'&&ui.view.indexOf('addon:')!==0&&S.projects.some(function(p){return !p.archived;}))?'<button class="btn primary" data-act="new-task">'+ico.plus+'<span class="lbl-hide">New task</span></button>':'';
+  var add=(editable&&ui.view!=='review'&&ui.view!=='meeting'&&ui.view.indexOf('addon:')!==0&&S.projects.some(function(p){return !p.archived;}))?'<button class="btn primary" data-act="new-task">'+ico.plus+'<span class="lbl-hide">New task</span></button><button class="btn bunch-btn" data-act="bunch" title="Add a bunch of tasks at once">'+ico.plus+'<span>Bunch</span></button>':'';
   return '<header class="top"><button class="icon-btn menu" data-act="nav" aria-label="Menu">'+ico.menu+'</button>'+
     '<div class="top-titles">'+(title?'<h1>'+title+'</h1>':'')+(sub?'<p class="sub">'+sub+'</p>':'')+'</div>'+
     '<div class="top-actions">'+search+actions+bellBtn()+add+'</div></header>'+
@@ -2595,6 +2597,7 @@ root.addEventListener('click',function(e){
     case 'filter':ui.filter=el.getAttribute('data-f');renderContent();break;
     case 'stat':ui.view='all';ui.filter=el.getAttribute('data-f');ui.q='';render();break;
     case 'new-task':openTask(null,{pid:ui.view==='project'?ui.pid:(ui.view==='map'?ui.focus:null)});break;
+    case 'bunch':openBunch('',{today:ui.view==='today'});break;
     case 'open-task':openTask(id);break;
     case 'new-project':ui.nav=false;openProject(null);break;
     case 'edit-project':openProject(id);break;
@@ -2687,31 +2690,44 @@ root.addEventListener('submit',function(e){
 /* ---------- secret mass-add: paste a list (or Shift+Enter) in any "+ Add" box ---------- */
 function cleanLine(l){return l.replace(/^\s*(?:[-*•·◦▪–—>]|\d+[.)]|\[[ xX]?\]|☐|☑|✓|✔)\s*/,'').replace(/^\s*(?:[-*•]|\[[ xX]?\])\s*/,'').trim();}
 function bulkLines(txt){return String(txt||'').split(/\r?\n/).map(cleanLine).filter(function(l){return l.length>0;});}
-function openBulkAdd(txt,ctx){
-  if(!editable)return;
-  var pidDef=ctx.pid||(S.projects[0]&&S.projects[0].id);
-  var d=openModal('<div class="dlg-h"><h2>Add several tasks</h2><button class="icon-btn" data-m="close" aria-label="Close">'+ico.x+'</button></div>'+
-    '<p class="hint" style="margin:-4px 0 10px">One task per line. Bullets and numbers are cleaned up for you. Start a line with <b>!</b> to make it high priority.</p>'+
-    '<div class="fld"><textarea id="bk-ta" rows="10" placeholder="Paste or type your list here">'+esc(bulkLines(txt).join('\n'))+'</textarea></div>'+
-    '<div class="grid" style="margin-top:10px"><label class="fld">Web<select id="bk-p" data-newweb>'+treeOrder().map(function(n){return '<option value="'+n.p.id+'"'+(n.p.id===pidDef?' selected':'')+'>'+esc(fullName(n.p))+'</option>';}).join('')+'<option value="__new">＋ Create a new web…</option></select></label>'+
-    (ctx.status?'':'<label class="cb" style="align-self:end;padding-bottom:8px"><input type="checkbox" id="bk-today"'+(ctx.today?' checked':'')+'> Pin them to Today</label>')+'</div>'+
-    '<div class="dlg-f"><span class="hint" id="bk-n"></span><span class="grow"></span><button class="btn ghost" data-m="close">Cancel</button><button class="btn primary" data-m="bk-add">Add tasks</button></div>');
-  var ta=d.querySelector('#bk-ta'),nEl=d.querySelector('#bk-n'),btn=d.querySelector('[data-m="bk-add"]');
-  function count(){var n=bulkLines(ta.value).length;nEl.textContent=n?n+' task'+(n===1?'':'s'):'';btn.textContent=n?'Add '+n+' task'+(n===1?'':'s'):'Add tasks';btn.disabled=!n;}
+var bunchQ=null,bunchLeft='';
+/* "+ Bunch": brain-dump a list, then go through each one in the normal task window */
+function openBunch(txt,ctx){
+  if(!editable)return;ctx=ctx||{};
+  var pidDef=ctx.pid||(ui.view==='project'?ui.pid:(ui.view==='map'?ui.focus:null))||(S.projects[0]&&S.projects[0].id);
+  var pre=bulkLines(txt).join('\n')||bunchLeft;
+  var d=openModal('<div class="dlg-h"><h2>Add a bunch 🧺</h2><button class="icon-btn" data-m="close" aria-label="Close">'+ico.x+'</button></div>'+
+    '<p class="hint" style="margin:-4px 0 10px">Type or paste your list, one task per line. Then we’ll open each one so you can add details, or add them all as they are.</p>'+
+    '<div class="fld"><textarea id="bk-ta" rows="10" placeholder="Email Sarah about the venue&#10;Book dentist&#10;Renew passport">'+esc(pre)+'</textarea></div>'+
+    '<div class="grid" style="margin-top:10px"><label class="fld">Start them in<select id="bk-p" data-newweb>'+treeOrder().map(function(n){return '<option value="'+n.p.id+'"'+(n.p.id===pidDef?' selected':'')+'>'+esc(fullName(n.p))+'</option>';}).join('')+'<option value="__new">＋ Create a new web…</option></select></label>'+
+    '<label class="cb" style="align-self:end;padding-bottom:8px"><input type="checkbox" id="bk-today"'+(ctx.today?' checked':'')+'> Pin them to Today</label></div>'+
+    '<p class="hint" style="margin:8px 0 0">Tip: start a line with <b>!</b> to make it high priority.</p>'+
+    '<div class="dlg-f"><span class="hint" id="bk-n"></span><span class="grow"></span><button class="btn ghost" data-m="bk-all">Just add them all</button><button class="btn primary" data-m="bk-go">One by one →</button></div>');
+  var ta=d.querySelector('#bk-ta'),nEl=d.querySelector('#bk-n');
+  function count(){var n=bulkLines(ta.value).length;nEl.textContent=n?n+' task'+(n===1?'':'s'):'';[].forEach.call(d.querySelectorAll('[data-m="bk-all"],[data-m="bk-go"]'),function(b){b.disabled=!n;});}
   ta.addEventListener('input',count);count();setTimeout(function(){ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);},30);
   d.addEventListener('click',function(e){
     var b=e.target.closest('[data-m]');if(!b)return;var m=b.getAttribute('data-m');
-    if(m==='close')closeModal();
-    else if(m==='bk-add'){
-      var lines=bulkLines(ta.value),pid=d.querySelector('#bk-p').value;if(!lines.length)return;
-      if(pid==='__new'||!proj(pid)){d.querySelector('#bk-p').focus();return;}
-      var pin=ctx.status?false:!!(d.querySelector('#bk-today')&&d.querySelector('#bk-today').checked);
-      lines.forEach(function(l){var hi=/^!+\s*/.test(l),title=l.replace(/^!+\s*/,'');if(!title)return;var t=addTask(pid,title,ctx.status||'todo');if(hi)t.priority='high';if(pin)t.today=TODAY;});
-      logAct('Added '+lines.length+' tasks at once to '+(proj(pid)?proj(pid).name:'a web'));
-      closeModal();commit();toast('Added '+lines.length+' task'+(lines.length===1?'':'s')+' to '+(proj(pid)?proj(pid).name:'your web'));
-    }
+    if(m==='close'){bunchLeft=ta.value;closeModal();return;}
+    if(m!=='bk-all'&&m!=='bk-go')return;
+    var lines=bulkLines(ta.value),pid=d.querySelector('#bk-p').value;if(!lines.length)return;
+    if(pid==='__new'||!proj(pid)){d.querySelector('#bk-p').focus();return;}
+    var pin=!!d.querySelector('#bk-today').checked;bunchLeft='';
+    if(m==='bk-all'){addBunchTitles(lines,pid,pin,ctx.status);closeModal();commit();toast('Added '+lines.length+' task'+(lines.length===1?'':'s'));return;}
+    closeModal();bunchQ={items:lines,i:0,pid:pid,pin:pin,status:ctx.status||'todo',added:0};bunchOpen();
   });
 }
+function addBunchTitles(lines,pid,pin,status){
+  lines.forEach(function(l){var hi=/^!+\s*/.test(l),title=l.replace(/^!+\s*/,'');if(!title)return;var t=addTask(pid,title,status||'todo');if(hi)t.priority='high';if(pin)t.today=TODAY;});
+  logAct('Added '+lines.length+' tasks at once');
+}
+function bunchOpen(){
+  if(!bunchQ)return;
+  if(bunchQ.i>=bunchQ.items.length){var n=bunchQ.added;bunchQ=null;if(n)toast('All done: added '+n+' task'+(n===1?'':'s')+' 🎉');return;}
+  var l=bunchQ.items[bunchQ.i],hi=/^!+\s*/.test(l);
+  openTask(null,{pid:bunchQ.pid,title:l.replace(/^!+\s*/,''),status:bunchQ.status,bunch:true,prio:hi?'high':'',today:bunchQ.pin?TODAY:''});
+}
+function bunchStop(){if(!bunchQ)return;var rest=bunchQ.items.slice(bunchQ.i);bunchLeft=rest.join('\n');var n=bunchQ.added;bunchQ=null;if(rest.length)toast('Stopped. '+rest.length+' left are saved in “+ Bunch” for later.');else if(n)toast('Added '+n+' task'+(n===1?'':'s'));}
 function bulkCtx(inp){
   var fm=inp&&inp.closest&&inp.closest('form');if(!fm)return null;
   if(fm.id==='today-add')return {pid:fm.p&&fm.p.value!=='__new'?fm.p.value:'',today:true};
@@ -2721,11 +2737,11 @@ function bulkCtx(inp){
 document.addEventListener('paste',function(e){
   var inp=e.target;if(!inp||inp.tagName!=='INPUT')return;var ctx=bulkCtx(inp);if(!ctx||!editable)return;
   var txt=(e.clipboardData||window.clipboardData).getData('text');if(bulkLines(txt).length<2)return;
-  e.preventDefault();inp.value='';openBulkAdd(txt,ctx);
+  e.preventDefault();inp.value='';openBunch(txt,ctx);
 });
 document.addEventListener('keydown',function(e){
   if(e.key!=='Enter'||!e.shiftKey)return;var inp=e.target;if(!inp||inp.tagName!=='INPUT')return;var ctx=bulkCtx(inp);if(!ctx||!editable)return;
-  e.preventDefault();var v=inp.value;inp.value='';openBulkAdd(v,ctx);
+  e.preventDefault();var v=inp.value;inp.value='';openBunch(v,ctx);
 },true);
 /* drag & drop */
 var dragId=null,line=document.createElement('div');line.className='drop-line';
@@ -2761,7 +2777,7 @@ function openModal(html,cls){
   ov.addEventListener('mousedown',function(e){if(e.target===ov)closeModal();});
   return ov.firstChild;
 }
-function closeModal(){modalHost.innerHTML='';modalOpen=false;if(themePreview){themePreview=false;applyTheme(S.settings.theme,S.settings.mode);}}
+function closeModal(){modalHost.innerHTML='';modalOpen=false;if(bunchQ)bunchStop();if(themePreview){themePreview=false;applyTheme(S.settings.theme,S.settings.mode);}}
 function opt(list,val){return list.map(function(o){return '<option value="'+esc(o[0])+'"'+(o[0]===val?' selected':'')+'>'+esc(o[1])+'</option>';}).join('');}
 
 /* "Finished on" only shows for done tasks */
@@ -2809,13 +2825,14 @@ function openTask(id,preset){
   var orig=id?task(id):null;
   var activeP=S.projects.filter(function(p){return !p.archived;});
   if(!orig&&!activeP.length){openProject(null);return;}
-  var t=orig?JSON.parse(JSON.stringify(orig)):{id:null,projectId:preset.pid||activeP[0].id,title:preset.title||'',status:preset.status||'todo',priority:'med',due:preset.due||'',tags:[],notes:'',subtasks:[],deps:[],repeat:'',est:0,attachments:[],today:preset.today||''};
+  var t=orig?JSON.parse(JSON.stringify(orig)):{id:null,projectId:preset.pid||activeP[0].id,title:preset.title||'',status:preset.status||'todo',priority:preset.prio||'med',due:preset.due||'',tags:[],notes:'',subtasks:[],deps:[],repeat:'',est:0,attachments:[],today:preset.today||''};
   var dis=editable?'':' disabled';
   var projOpts=treeOrder().map(function(n){return [n.p.id,fullName(n.p)];});
   if(!projOpts.some(function(o){return o[0]===t.projectId;})&&proj(t.projectId))projOpts.push([t.projectId,proj(t.projectId).name]);
   var hist=orig?S.activity.filter(function(a){return a.task===orig.id;}).slice(0,6):[];
   var blocksList=orig?dependents(orig):[];
   var d=openModal(
+    (preset.bunch&&bunchQ?'<div class="bunch-bar"><b>🧺 '+(bunchQ.i+1)+' of '+bunchQ.items.length+'</b><span class="grow"></span><button class="link-btn sm" data-m="bk-skip">Skip</button><button class="link-btn sm" data-m="bk-rest">Add the rest as they are</button><button class="link-btn sm" data-m="bk-stop">Stop</button></div>':'')+
     '<div class="dlg-h"><input class="title-in" id="f-title" placeholder="Task title" value="'+esc(t.title)+'"'+dis+'><button class="icon-btn" data-m="close" aria-label="Close">'+ico.x+'</button></div>'+
     '<div class="grid">'+
       '<label class="fld">Project<select id="f-proj" data-newweb'+dis+'>'+opt(projOpts,t.projectId)+(editable?'<option value="__new">＋ Create a new web…</option>':'')+'</select></label>'+
@@ -2911,7 +2928,7 @@ function openTask(id,preset){
     var pinned=t.today===TODAY;
     f.innerHTML=(orig?'<button class="btn ghost danger" data-m="delete">Delete</button>':'')+cm+
       '<button class="btn ghost'+(pinned?' pinned':'')+'" data-m="pin" title="Show this on your Today page">'+ico.sun+(pinned?'On Today':'Add to Today')+'</button>'+
-      '<span class="grow"></span><button class="btn ghost" data-m="close">Cancel</button><button class="btn primary" data-m="save">'+(orig?'Save':'Add task')+'</button>';
+      '<span class="grow"></span><button class="btn ghost" data-m="close">Cancel</button><button class="btn primary" data-m="save">'+(orig?'Save':(preset.bunch&&bunchQ&&bunchQ.i<bunchQ.items.length-1?'Add & next →':'Add task'))+'</button>';
   }
   function collect(){
     t.title=d.querySelector('#f-title').value.trim();
@@ -2942,6 +2959,7 @@ function openTask(id,preset){
     else{if(target.blocked)logAct('Unstuck “'+t.title+'”',target);target.blocked=null;}
     setStatusOf(target,t.newStatus);
     if(target.status==='done'&&t.newDoneOn&&t.newDoneOn!==target.completedAt){target.completedAt=t.newDoneOn;logAct('Marked “'+target.title+'” as finished on '+fmtDue(t.newDoneOn),target);}
+    if(preset.bunch&&bunchQ){bunchQ.i++;bunchQ.added++;var bq=bunchQ;bunchQ=null;closeModal();bunchQ=bq;commit();setTimeout(bunchOpen,60);return;}
     closeModal();commit();
   }
   var stuckBy=(t.blocked&&t.status!=='done')?t.blocked.by:'';
@@ -2965,6 +2983,9 @@ function openTask(id,preset){
     if(b.hasAttribute('data-sub')){var s=t.subtasks[+b.getAttribute('data-sub')];s.done=!s.done;drawSubs();return;}
     if(b.hasAttribute('data-subdel')){t.subtasks.splice(+b.getAttribute('data-subdel'),1);drawSubs();return;}
     var m=b.getAttribute('data-m');
+    if(m==='bk-skip'&&bunchQ){bunchQ.i++;var bq1=bunchQ;bunchQ=null;closeModal();bunchQ=bq1;setTimeout(bunchOpen,60);return;}
+    if(m==='bk-rest'&&bunchQ){var rest=bunchQ.items.slice(bunchQ.i),n=bunchQ.added+rest.length;addBunchTitles(rest,bunchQ.pid,bunchQ.pin,bunchQ.status);bunchQ=null;closeModal();commit();toast('Added '+n+' task'+(n===1?'':'s')+' 🎉');return;}
+    if(m==='bk-stop'){closeModal();return;}
     if(m==='close')closeModal();
     else if(m==='save')save();
     else if(m==='pin'){t.today=t.today===TODAY?'':TODAY;drawFoot(false);}
