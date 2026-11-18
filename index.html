@@ -89,6 +89,17 @@
 .addon-row{align-items:flex-start;gap:10px}
 .fld[hidden]{display:none!important}
 .bunch-btn{padding:0 12px}
+.bk-head,.bk-row{display:grid;grid-template-columns:minmax(0,1fr) 142px 104px 44px 30px;gap:6px;align-items:center}
+.bk-head{font-size:11.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);padding:0 2px 4px}
+.bk-rows{display:flex;flex-direction:column;gap:6px;max-height:46vh;overflow:auto;padding:2px}
+.bk-row input,.bk-row select{border:1px solid var(--line-2);background:var(--surface);color:var(--text);border-radius:9px;padding:8px 9px;font-size:14px;min-width:0;width:100%}
+.bk-row input:focus,.bk-row select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.bk-pin{display:flex;align-items:center;justify-content:center;cursor:pointer}.bk-pin input{position:absolute;opacity:0;width:1px;height:1px}
+.bk-pin span{width:34px;height:34px;border-radius:9px;border:1px solid var(--line-2);display:flex;align-items:center;justify-content:center;color:var(--faint)}
+.bk-pin input:checked+span{background:#fef3c7;border-color:#f59e0b;color:#b45309}.bk-pin span svg{width:16px;height:16px}
+.bk-x{width:30px;height:30px;color:var(--faint)}
+@media (max-width:640px){.bk-head{display:none}.bk-row{grid-template-columns:1fr 1fr 44px 30px;padding-bottom:8px;border-bottom:1px dashed var(--line)}.bk-row .bk-t{grid-column:1/-1}}
+.dialog.wide{width:min(780px,calc(100vw - 24px));max-width:none}
 .bunch-bar{display:flex;align-items:center;gap:10px;margin:-6px 0 12px;padding:8px 12px;border-radius:11px;background:var(--accent-soft);font-size:13.5px}
 .addon-row .ad-name{display:inline-flex!important;align-items:center;gap:6px}
 .addon-row .ad-name svg{width:16px;height:16px;flex:none}
@@ -2691,43 +2702,77 @@ root.addEventListener('submit',function(e){
 function cleanLine(l){return l.replace(/^\s*(?:[-*•·◦▪–—>]|\d+[.)]|\[[ xX]?\]|☐|☑|✓|✔)\s*/,'').replace(/^\s*(?:[-*•]|\[[ xX]?\])\s*/,'').trim();}
 function bulkLines(txt){return String(txt||'').split(/\r?\n/).map(cleanLine).filter(function(l){return l.length>0;});}
 var bunchQ=null,bunchLeft='';
-/* "+ Bunch": brain-dump a list, then go through each one in the normal task window */
+/* "+ Bunch": a quick list (one row per task, with date / priority / pin on the right), then go through each one in the normal task window */
+function bunchRowsFrom(txt){return bulkLines(txt).map(function(l){var hi=/^!+\s*/.test(l);return {title:l.replace(/^!+\s*/,''),due:'',prio:hi?'high':'med',pin:false};});}
 function openBunch(txt,ctx){
   if(!editable)return;ctx=ctx||{};
   var pidDef=ctx.pid||(ui.view==='project'?ui.pid:(ui.view==='map'?ui.focus:null))||(S.projects[0]&&S.projects[0].id);
-  var pre=bulkLines(txt).join('\n')||bunchLeft;
+  var rows=bunchRowsFrom(txt);
+  if(!rows.length&&bunchLeft&&typeof bunchLeft==='object')rows=bunchLeft;
+  if(!rows.length)rows=[{title:'',due:'',prio:'med',pin:!!ctx.today}];
+  rows.forEach(function(r){if(r.pin===undefined)r.pin=!!ctx.today;});
+  if(ctx.today)rows.forEach(function(r){if(!r._seen)r.pin=true;});
   var d=openModal('<div class="dlg-h"><h2>Add a bunch 🧺</h2><button class="icon-btn" data-m="close" aria-label="Close">'+ico.x+'</button></div>'+
-    '<p class="hint" style="margin:-4px 0 10px">Type or paste your list, one task per line. Then we’ll open each one so you can add details, or add them all as they are.</p>'+
-    '<div class="fld"><textarea id="bk-ta" rows="10" placeholder="Email Sarah about the venue&#10;Book dentist&#10;Renew passport">'+esc(pre)+'</textarea></div>'+
-    '<div class="grid" style="margin-top:10px"><label class="fld">Start them in<select id="bk-p" data-newweb>'+treeOrder().map(function(n){return '<option value="'+n.p.id+'"'+(n.p.id===pidDef?' selected':'')+'>'+esc(fullName(n.p))+'</option>';}).join('')+'<option value="__new">＋ Create a new web…</option></select></label>'+
-    '<label class="cb" style="align-self:end;padding-bottom:8px"><input type="checkbox" id="bk-today"'+(ctx.today?' checked':'')+'> Pin them to Today</label></div>'+
-    '<p class="hint" style="margin:8px 0 0">Tip: start a line with <b>!</b> to make it high priority.</p>'+
-    '<div class="dlg-f"><span class="hint" id="bk-n"></span><span class="grow"></span><button class="btn ghost" data-m="bk-all">Just add them all</button><button class="btn primary" data-m="bk-go">One by one →</button></div>');
-  var ta=d.querySelector('#bk-ta'),nEl=d.querySelector('#bk-n');
-  function count(){var n=bulkLines(ta.value).length;nEl.textContent=n?n+' task'+(n===1?'':'s'):'';[].forEach.call(d.querySelectorAll('[data-m="bk-all"],[data-m="bk-go"]'),function(b){b.disabled=!n;});}
-  ta.addEventListener('input',count);count();setTimeout(function(){ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);},30);
+    '<p class="hint" style="margin:-4px 0 10px">One task per row. Press <b>Enter</b> for a new row (it copies the date and priority from the row above). Pasting a list fills in rows for you.</p>'+
+    '<div class="bk-head"><span>Task</span><span>Due</span><span>Priority</span><span title="Pin to Today">Today</span><span></span></div>'+
+    '<div class="bk-rows" id="bk-rows"></div>'+
+    '<button type="button" class="link-btn sm" data-m="bk-row">+ Add a row</button>'+
+    '<div class="grid" style="margin-top:12px"><label class="fld">Start them in<select id="bk-p" data-newweb>'+treeOrder().map(function(n){return '<option value="'+n.p.id+'"'+(n.p.id===pidDef?' selected':'')+'>'+esc(fullName(n.p))+'</option>';}).join('')+'<option value="__new">＋ Create a new web…</option></select></label></div>'+
+    '<div class="dlg-f"><span class="hint" id="bk-n"></span><span class="grow"></span><button class="btn ghost" data-m="bk-all">Just add them all</button><button class="btn primary" data-m="bk-go">One by one →</button></div>','wide');
+  var box=d.querySelector('#bk-rows'),nEl=d.querySelector('#bk-n');
+  function rowHtml(r,ix){
+    return '<div class="bk-row" data-ix="'+ix+'"><input class="bk-t" placeholder="'+(ix===0?'e.g. Email Sarah about the venue':'Next task…')+'" value="'+esc(r.title)+'">'+
+      '<input type="date" class="bk-d" value="'+esc(r.due||'')+'">'+
+      '<select class="bk-pr">'+[['high','High'],['med','Medium'],['low','Low']].map(function(o){return '<option value="'+o[0]+'"'+(r.prio===o[0]?' selected':'')+'>'+o[1]+'</option>';}).join('')+'</select>'+
+      '<label class="bk-pin" title="Pin to Today"><input type="checkbox"'+(r.pin?' checked':'')+'><span>'+ico.sun+'</span></label>'+
+      '<button type="button" class="icon-btn bk-x" data-m="bk-del" aria-label="Remove row">'+ico.x+'</button></div>';
+  }
+  function read(){[].forEach.call(box.querySelectorAll('.bk-row'),function(el){var r=rows[+el.getAttribute('data-ix')];if(!r)return;r.title=el.querySelector('.bk-t').value;r.due=el.querySelector('.bk-d').value;r.prio=el.querySelector('.bk-pr').value;r.pin=el.querySelector('.bk-pin input').checked;r._seen=1;});}
+  function draw(focusIx){box.innerHTML=rows.map(rowHtml).join('');count();if(focusIx!=null){var f=box.querySelectorAll('.bk-t')[focusIx];if(f){f.focus();f.setSelectionRange(f.value.length,f.value.length);}}}
+  function filled(){read();return rows.filter(function(r){return r.title.trim();});}
+  function count(){var n=rows.filter(function(r){return (r.title||'').trim();}).length;nEl.textContent=n?n+' task'+(n===1?'':'s'):'';[].forEach.call(d.querySelectorAll('[data-m="bk-all"],[data-m="bk-go"]'),function(b){b.disabled=!n;});}
+  function addAfter(ix,carry){read();var p0=rows[ix]||rows[rows.length-1]||{};rows.splice(ix+1,0,{title:carry||'',due:p0.due||'',prio:p0.prio||'med',pin:!!p0.pin});draw(ix+1);}
+  box.addEventListener('input',function(){read();count();});
+  box.addEventListener('change',function(){read();});
+  box.addEventListener('keydown',function(e){
+    var t=e.target;if(!t.classList.contains('bk-t'))return;var ix=+t.closest('.bk-row').getAttribute('data-ix');
+    if(e.key==='Enter'){e.preventDefault();e.stopPropagation();addAfter(ix);}
+    else if(e.key==='Backspace'&&!t.value&&rows.length>1){e.preventDefault();read();rows.splice(ix,1);draw(Math.max(0,ix-1));}
+    else if(e.key==='ArrowDown'){var nx=box.querySelectorAll('.bk-t')[ix+1];if(nx){e.preventDefault();nx.focus();}}
+    else if(e.key==='ArrowUp'){var pv=box.querySelectorAll('.bk-t')[ix-1];if(pv){e.preventDefault();pv.focus();}}
+  });
+  box.addEventListener('paste',function(e){
+    var t=e.target;if(!t.classList.contains('bk-t'))return;var txt=(e.clipboardData||window.clipboardData).getData('text'),more=bunchRowsFrom(txt);if(more.length<2)return;
+    e.preventDefault();read();var ix=+t.closest('.bk-row').getAttribute('data-ix'),p0=rows[ix];
+    more.forEach(function(m){m.due=p0.due;m.pin=p0.pin;if(m.prio!=='high')m.prio=p0.prio;});
+    if(!p0.title.trim())rows.splice(ix,1);else ix++;
+    Array.prototype.splice.apply(rows,[p0.title.trim()?ix:ix,0].concat(more));draw(Math.min(rows.length-1,ix+more.length-1));
+  });
+  draw(rows.length-1);
   d.addEventListener('click',function(e){
     var b=e.target.closest('[data-m]');if(!b)return;var m=b.getAttribute('data-m');
-    if(m==='close'){bunchLeft=ta.value;closeModal();return;}
+    if(m==='close'){var keep=filled();bunchLeft=keep.length?keep:'';closeModal();return;}
+    if(m==='bk-row'){addAfter(rows.length-1);return;}
+    if(m==='bk-del'){read();var ix=+b.closest('.bk-row').getAttribute('data-ix');rows.splice(ix,1);if(!rows.length)rows.push({title:'',due:'',prio:'med',pin:!!ctx.today});draw(Math.min(ix,rows.length-1));return;}
     if(m!=='bk-all'&&m!=='bk-go')return;
-    var lines=bulkLines(ta.value),pid=d.querySelector('#bk-p').value;if(!lines.length)return;
+    var list=filled(),pid=d.querySelector('#bk-p').value;if(!list.length)return;
     if(pid==='__new'||!proj(pid)){d.querySelector('#bk-p').focus();return;}
-    var pin=!!d.querySelector('#bk-today').checked;bunchLeft='';
-    if(m==='bk-all'){addBunchTitles(lines,pid,pin,ctx.status);closeModal();commit();toast('Added '+lines.length+' task'+(lines.length===1?'':'s'));return;}
-    closeModal();bunchQ={items:lines,i:0,pid:pid,pin:pin,status:ctx.status||'todo',added:0};bunchOpen();
+    bunchLeft='';
+    if(m==='bk-all'){addBunchRows(list,pid,ctx.status);closeModal();commit();toast('Added '+list.length+' task'+(list.length===1?'':'s'));return;}
+    closeModal();bunchQ={items:list,i:0,pid:pid,status:ctx.status||'todo',added:0};bunchOpen();
   });
 }
-function addBunchTitles(lines,pid,pin,status){
-  lines.forEach(function(l){var hi=/^!+\s*/.test(l),title=l.replace(/^!+\s*/,'');if(!title)return;var t=addTask(pid,title,status||'todo');if(hi)t.priority='high';if(pin)t.today=TODAY;});
-  logAct('Added '+lines.length+' tasks at once');
+function addBunchRows(list,pid,status){
+  list.forEach(function(r){var t=addTask(pid,r.title.trim(),status||'todo');t.priority=r.prio||'med';if(r.due)t.due=r.due;if(r.pin)t.today=TODAY;});
+  logAct('Added '+list.length+' tasks at once');
 }
 function bunchOpen(){
   if(!bunchQ)return;
   if(bunchQ.i>=bunchQ.items.length){var n=bunchQ.added;bunchQ=null;if(n)toast('All done: added '+n+' task'+(n===1?'':'s')+' 🎉');return;}
-  var l=bunchQ.items[bunchQ.i],hi=/^!+\s*/.test(l);
-  openTask(null,{pid:bunchQ.pid,title:l.replace(/^!+\s*/,''),status:bunchQ.status,bunch:true,prio:hi?'high':'',today:bunchQ.pin?TODAY:''});
+  var r=bunchQ.items[bunchQ.i];
+  openTask(null,{pid:bunchQ.pid,title:r.title.trim(),status:bunchQ.status,bunch:true,prio:r.prio||'med',due:r.due||'',today:r.pin?TODAY:''});
 }
-function bunchStop(){if(!bunchQ)return;var rest=bunchQ.items.slice(bunchQ.i);bunchLeft=rest.join('\n');var n=bunchQ.added;bunchQ=null;if(rest.length)toast('Stopped. '+rest.length+' left are saved in “+ Bunch” for later.');else if(n)toast('Added '+n+' task'+(n===1?'':'s'));}
+function bunchStop(){if(!bunchQ)return;var rest=bunchQ.items.slice(bunchQ.i);bunchLeft=rest.length?rest:'';var n=bunchQ.added;bunchQ=null;if(rest.length)toast('Stopped. '+rest.length+' left are saved in “+ Bunch” for later.');else if(n)toast('Added '+n+' task'+(n===1?'':'s'));}
 function bulkCtx(inp){
   var fm=inp&&inp.closest&&inp.closest('form');if(!fm)return null;
   if(fm.id==='today-add')return {pid:fm.p&&fm.p.value!=='__new'?fm.p.value:'',today:true};
@@ -2984,7 +3029,7 @@ function openTask(id,preset){
     if(b.hasAttribute('data-subdel')){t.subtasks.splice(+b.getAttribute('data-subdel'),1);drawSubs();return;}
     var m=b.getAttribute('data-m');
     if(m==='bk-skip'&&bunchQ){bunchQ.i++;var bq1=bunchQ;bunchQ=null;closeModal();bunchQ=bq1;setTimeout(bunchOpen,60);return;}
-    if(m==='bk-rest'&&bunchQ){var rest=bunchQ.items.slice(bunchQ.i),n=bunchQ.added+rest.length;addBunchTitles(rest,bunchQ.pid,bunchQ.pin,bunchQ.status);bunchQ=null;closeModal();commit();toast('Added '+n+' task'+(n===1?'':'s')+' 🎉');return;}
+    if(m==='bk-rest'&&bunchQ){var rest=bunchQ.items.slice(bunchQ.i),n=bunchQ.added+rest.length;addBunchRows(rest,bunchQ.pid,bunchQ.status);bunchQ=null;closeModal();commit();toast('Added '+n+' task'+(n===1?'':'s')+' 🎉');return;}
     if(m==='bk-stop'){closeModal();return;}
     if(m==='close')closeModal();
     else if(m==='save')save();
