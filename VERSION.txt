@@ -4,3 +4,4 @@ Corner (private version)
 2026-11-17  Pinch to zoom the thinking space on phones
 2026-11-17  iPhone pinch-to-zoom fix on the thinking space
 2026-11-17  Seasonal themes (heading fonts) + Add-ons switch with a Money placeholder
+2026-11-18  Finished on date for done tasks

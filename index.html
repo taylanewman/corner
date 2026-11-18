@@ -87,6 +87,7 @@
 .th-group{grid-column:1/-1;font-size:11.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin:6px 0 -2px}
 .th-opt .th-fn{font-size:13px}
 .addon-row{align-items:flex-start;gap:10px}
+.fld[hidden]{display:none!important}
 .addon-row .ad-name{display:inline-flex!important;align-items:center;gap:6px}
 .addon-row .ad-name svg{width:16px;height:16px;flex:none}
 .addon-root{max-width:1000px}
@@ -2696,6 +2697,8 @@ function openModal(html,cls){
 function closeModal(){modalHost.innerHTML='';modalOpen=false;if(themePreview){themePreview=false;applyTheme(S.settings.theme,S.settings.mode);}}
 function opt(list,val){return list.map(function(o){return '<option value="'+esc(o[0])+'"'+(o[0]===val?' selected':'')+'>'+esc(o[1])+'</option>';}).join('');}
 
+/* "Finished on" only shows for done tasks */
+document.addEventListener('change',function(e){var st=e.target;if(!st||st.id!=='f-status')return;var w=st.closest('.dialog')&&st.closest('.dialog').querySelector('#f-doneon-w');if(!w)return;w.hidden=st.value!=='done';if(st.value==='done'){var di=w.querySelector('input');if(!di.value)di.value=TODAY;}});
 /* picking "Every Monday" etc. fills in the matching due date right away */
 document.addEventListener('change',function(e){
   var r=e.target;if(!r||r.id!=='f-rep'||!/^w[0-6]$/.test(r.value))return;
@@ -2754,6 +2757,7 @@ function openTask(id,preset){
       '<label class="fld">Due date<input type="date" id="f-due" value="'+esc(t.due)+'"'+dis+'></label>'+
       '<label class="fld">Estimate<span class="est-in"><input type="number" id="f-est" min="0" step="0.25" placeholder="0" value="'+(t.est||'')+'"'+dis+'><i>hours</i></span></label>'+
       '<label class="fld">Repeats<select id="f-rep"'+dis+'>'+opt(REPEATS,t.repeat)+'</select></label>'+
+      '<label class="fld" id="f-doneon-w"'+(t.status==='done'?'':' hidden')+'>Finished on<input type="date" id="f-doneon" max="'+TODAY+'" value="'+esc(t.completedAt||TODAY)+'"'+dis+'></label>'+
       '<div class="fld span2">Waits on <div class="deps" id="f-deps"></div></div>'+
     '</div>'+
     (blocksList.length?'<div class="fld">Other tasks waiting on this one<div class="deps">'+blocksList.map(function(x){return '<button class="dep-chip link" data-goto="'+x.id+'">'+esc(x.title)+'</button>';}).join('')+'</div></div>':'')+
@@ -2846,6 +2850,7 @@ function openTask(id,preset){
     t.title=d.querySelector('#f-title').value.trim();
     t.projectId=d.querySelector('#f-proj').value;if(t.projectId==='__new'||!proj(t.projectId))t.projectId=orig?orig.projectId:(S.projects[0]&&S.projects[0].id);
     t.newStatus=d.querySelector('#f-status').value;
+    var dOn=d.querySelector('#f-doneon');t.newDoneOn=(dOn&&dOn.value&&dOn.value<=TODAY)?dOn.value:'';
     t.priority=d.querySelector('#f-prio').value;
     t.due=d.querySelector('#f-due').value||'';
     t.est=Math.max(0,parseFloat(d.querySelector('#f-est').value)||0);
@@ -2869,6 +2874,7 @@ function openTask(id,preset){
     if(stuckBy){if(!target.blocked||target.blocked.by!==stuckBy){target.blocked={by:stuckBy,since:TODAY,note:sn};logAct('Marked “'+t.title+'” stuck on '+STUCK_BY[stuckBy],target);}else target.blocked.note=sn;}
     else{if(target.blocked)logAct('Unstuck “'+t.title+'”',target);target.blocked=null;}
     setStatusOf(target,t.newStatus);
+    if(target.status==='done'&&t.newDoneOn&&t.newDoneOn!==target.completedAt){target.completedAt=t.newDoneOn;logAct('Marked “'+target.title+'” as finished on '+fmtDue(t.newDoneOn),target);}
     closeModal();commit();
   }
   var stuckBy=(t.blocked&&t.status!=='done')?t.blocked.by:'';
