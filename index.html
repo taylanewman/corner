@@ -835,25 +835,36 @@ var ADDONS=[{id:'money',name:'Money',icon:'coin',file:'addons/money.js',desc:'De
 var addonDefs={},addonState={},addonEls={};
 function addonOn(id){return !!(S&&S.settings&&S.settings.addons&&S.settings.addons[id]);}
 function addonMeta(id){return ADDONS.filter(function(a){return a.id===id;})[0];}
-window.CornerAddons={register:function(def){if(!def||!def.id)return;addonDefs[def.id]=def;addonState[def.id]='ready';if(ui.view==='addon:'+def.id)mountAddon();}};
+window.CornerAddons={register:function(def){if(!def||!def.id)return;addonDefs[def.id]=def;addonState[def.id]='ready';if(def.init)try{def.init(apiFor(def.id),function(){if(ui.view==='today')mountAddonToday();});}catch(_){}if(ui.view==='addon:'+def.id)mountAddon();if(ui.view==='today')mountAddonToday();}};
 function loadAddon(id){
   var m=addonMeta(id);if(!m||addonState[id])return;addonState[id]='loading';
   var sc=document.createElement('script');sc.src=m.file+'?v='+encodeURIComponent(APP_BUILD);sc.async=true;
   sc.onerror=function(){addonState[id]='failed';if(ui.view==='addon:'+id)mountAddon();};
   document.head.appendChild(sc);
 }
+function whenBooted(){return new Promise(function(res){(function w(){if(!booting)res();else setTimeout(w,200);})();});}
 function addonApi(id){
   var path='pm/addon-'+id,key='pm-addon-'+id;
   return {
-    id:id,editable:editable,esc:esc,toast:toast,today:function(){return TODAY;},
-    load:function(){if(dbNs)return dbNs.doc(path).get().then(function(sn){return sn.exists?JSON.parse(JSON.stringify(sn.data())):null;});return Promise.resolve(store.get(key));},
-    save:function(obj){if(!editable)return Promise.reject(new Error('read-only'));if(dbNs)return dbNs.doc(path).set(obj);store.set(key,obj);return Promise.resolve();}
+    id:id,get editable(){return editable;},esc:esc,toast:toast,today:function(){return TODAY;},
+    load:function(){return whenBooted().then(function(){if(db&&dbMode)return db.doc(path).get().then(function(sn){return sn.exists?JSON.parse(JSON.stringify(sn.data())):null;});return store.get(key);});},
+    save:function(obj){if(!editable)return Promise.reject(new Error('read-only'));if(db&&dbMode)return db.doc(path).set(JSON.parse(JSON.stringify(obj)));store.set(key,obj);return Promise.resolve();},
+    watch:function(cb){if(!db||!dbMode||!db.doc(path).onSnapshot)return function(){};try{return db.doc(path).onSnapshot(function(sn){if(sn&&sn.metadata&&sn.metadata.hasPendingWrites)return;cb(sn&&sn.exists?JSON.parse(JSON.stringify(sn.data())):null);},function(){});}catch(_){return function(){};}},
+    openView:function(){ui.view='addon:'+id;ui.nav=false;render();}
   };
+}
+var addonApis={};function apiFor(id){return addonApis[id]||(addonApis[id]=addonApi(id));}
+function mountAddonToday(){
+  [].forEach.call(document.querySelectorAll('[data-addon-today]'),function(el){
+    var id=el.getAttribute('data-addon-today'),def=addonDefs[id];
+    if(!def){loadAddon(id);return;}
+    if(def.todayCard)try{el.hidden=!def.todayCard(el,apiFor(id));}catch(_){el.hidden=true;}
+  });
 }
 function mountAddon(){
   var host=document.getElementById('addon-root');if(!host)return;var id=ui.view.slice(6),def=addonDefs[id];
   if(!def){host.innerHTML=addonState[id]==='failed'?'<div class="empty"><b>Couldn’t load this add-on</b><p>Check your connection and refresh.</p></div>':'<div class="empty"><b>Loading…</b></div>';loadAddon(id);return;}
-  if(!addonEls[id]){var el=document.createElement('div');el.className='addon-body';addonEls[id]=el;try{def.mount(el,addonApi(id));}catch(e){el.innerHTML='<div class="empty"><b>Something went wrong in this add-on.</b></div>';}}
+  if(!addonEls[id]){var el=document.createElement('div');el.className='addon-body';addonEls[id]=el;try{def.mount(el,apiFor(id));}catch(e){el.innerHTML='<div class="empty"><b>Something went wrong in this add-on.</b></div>';}}
   host.innerHTML='';host.appendChild(addonEls[id]);if(def.onShow)try{def.onShow();}catch(_){}
 }
 var REPEATS=[['','Never'],['daily','Every day'],['weekdays','Every weekday (Mon–Fri)'],['w1','Every Monday'],['w2','Every Tuesday'],['w3','Every Wednesday'],['w4','Every Thursday'],['w5','Every Friday'],['w6','Every Saturday'],['w0','Every Sunday'],['weekly','Every week (same day as due date)'],['biweekly','Every 2 weeks'],['monthly','Every month']];
@@ -1270,9 +1281,10 @@ function render(){
   root.innerHTML='<div class="app'+(editable?'':' ro')+(ui.nav?' nav-open':'')+(ui.present?' presenting':'')+'">'+sidebar()+'<main class="main">'+topbar()+'<div class="content'+(ui.view==='map'?' map-mode':'')+'" id="content">'+content()+'</div></main></div>';
   if(ui.view==='map'){drawWorld(false);bindMap();if(justCreated){var jc=justCreated;justCreated=null;focusWeb(jc);}}
   if(ui.view.indexOf('addon:')===0)mountAddon();
+  if(ui.view==='today')mountAddonToday();
   saveUI();reportPins();
 }
-function renderContent(){var c=document.getElementById('content');if(c)c.innerHTML=content();if(ui.view.indexOf('addon:')===0)mountAddon();saveUI();reportPins();}
+function renderContent(){var c=document.getElementById('content');if(c)c.innerHTML=content();if(ui.view.indexOf('addon:')===0)mountAddon();if(ui.view==='today')mountAddonToday();saveUI();reportPins();}
 function undoToast(msg,fn){[].forEach.call(document.querySelectorAll('.toast.undo'),function(x){x.remove();});var d=document.createElement('div');d.className='toast undo';d.innerHTML='<span></span><button class="toast-undo">Undo</button>';d.firstChild.textContent=msg;var done=false;d.querySelector('button').addEventListener('click',function(){if(done)return;done=true;fn();d.remove();});document.body.appendChild(d);setTimeout(function(){d.remove();},8000);}
 function toast(msg){var d=document.createElement('div');d.className='toast';d.textContent=msg;document.body.appendChild(d);setTimeout(function(){d.remove();},2200);}
 
@@ -1739,7 +1751,8 @@ function todayView(){
       (stuck.length?stuck.slice(0,ui.waitAll?999:5).map(function(t){var a=stuckAlert(t);return '<div class="mini" data-act="open-task" data-id="'+t.id+'"><span class="mini-t">'+(t.priority==='high'?'<span class="pdot hi" title="High priority"></span>':'')+esc(t.title)+'</span><span class="chip stuck'+(a?' alert':'')+'">'+ico.pause+(t.blocked.by==='supervisor'?'Supervisor':'Team')+' · '+stuckDays(t)+'d</span></div>';}).join('')+(stuck.length>5?'<button class="link-btn sm wmore" data-act="wait-all">'+(ui.waitAll?'Show fewer':'Show all '+stuck.length)+'</button>':''):'<div class="hint">Nobody is holding you up.</div>')+
       (waitingDeps.length?'<div class="hint" style="margin-top:8px">'+ico.lock+' '+waitingDeps.length+' task'+(waitingDeps.length===1?'':'s')+' waiting on other tasks</div>':'')+'</div>'+
     '<div class="side-card"><h3>Coming up</h3>'+(soon.length?soon.map(function(t){return '<div class="mini" data-act="open-task" data-id="'+t.id+'"><span class="mini-t">'+esc(t.title)+'</span>'+dueChip(t)+'</div>';}).join(''):'<div class="hint">Nothing else due this week.</div>')+'</div>';
-  return '<div class="today"><div class="today-main">'+main+'</div><aside class="today-side">'+side+'</aside></div>';
+  var adSlots=ADDONS.filter(function(a){return addonOn(a.id);}).map(function(a){return '<div class="side-card addon-today" data-addon-today="'+a.id+'" hidden></div>';}).join('');
+  return '<div class="today"><div class="today-main">'+main+'</div><aside class="today-side">'+adSlots+side+'</aside></div>';
 }
 function openPickToday(){
   var d=openModal('<div class="dlg-h"><h2>Add to today</h2><button class="icon-btn" data-m="close" aria-label="Close">'+ico.x+'</button></div><div id="pk-body" class="pk"></div><div class="dlg-f"><span class="grow"></span><button class="btn" data-m="close">Done</button></div>');
