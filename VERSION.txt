@@ -12,3 +12,4 @@ Corner (private version)
 2026-11-18  + Bunch: each row has due date, priority and Today pin
 2026-11-18  Money: dates are now Month/Day/Year dropdowns; add-on updates always load fresh
 2026-11-18  Money: dates are now Month/Day/Year dropdowns; add-on updates always load fresh
+2026-11-19  Calendar: long task names wrap inside their day

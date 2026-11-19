@@ -702,6 +702,9 @@ body.wk-dragging,body.wk-dragging *{cursor:grabbing!important;-webkit-user-selec
 .cal-t.hot{box-shadow:0 0 0 1px rgba(232,52,44,.45);color:var(--red)}
 .cal-t.stuck{border-left-style:dashed}
 .cal-t.dragging{opacity:.4}
+/* wrap long task names inside their own day instead of spilling into the next one */
+.cal-day{min-width:0}
+.cal-t{white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere;word-break:break-word;line-height:1.3;padding:3px 6px;min-width:0}
 .wk{border-left:1px solid var(--line);display:grid;place-items:center;font-size:12px;font-weight:600;color:var(--muted);background:var(--bg)}
 .cal-hd .wk{display:block;text-align:center}
 .wk.over{color:var(--red)}
