@@ -19,6 +19,14 @@ html = re.sub(r'<title>.*?</title>', '<title>Corner</title>', html, count=1)
 html = html.replace('</title>\n', '</title>\n' + head_extra, 1)
 loader = '<script src="config.js"></script>\n<script src="vendor/supabase.js"></script>\n<script src="private.js"></script>\n'
 html = html.replace('<script type="application/json" id="pm-state">', loader + '<script type="application/json" id="pm-state">', 1)
+# cache-busting: tie add-on file links to their contents, so browsers always fetch the newest version
+import hashlib
+h = hashlib.md5()
+adir = os.path.join(root, 'addons')
+if os.path.isdir(adir):
+    for f in sorted(os.listdir(adir)):
+        h.update(open(os.path.join(adir, f), 'rb').read())
+html = re.sub(r"var APP_BUILD='[^']*'", "var APP_BUILD='%s'" % h.hexdigest()[:10], html, count=1)
 open(os.path.join(root, 'index.html'), 'w', encoding='utf-8').write(html)
 with open(os.path.join(root, 'VERSION.txt'), 'a') as f: f.write('%s  %s\n' % (datetime.date.today().isoformat(), note))
 print('updated index.html')

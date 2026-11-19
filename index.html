@@ -854,7 +854,7 @@ function applyTheme(th,md){var r=document.documentElement;themeFont(th);
 }
 (function(){try{var t=JSON.parse(localStorage.getItem('pm-theme')||'null');if(t)applyTheme(t[0],t[1]);}catch(_){}})();
 /* ---------- add-ons: optional sections that live in their own file and only load when switched on ---------- */
-var APP_BUILD='2026-11-17b';
+var APP_BUILD='f18d532651';
 var ADDONS=[{id:'money',name:'Money',icon:'coin',file:'addons/money.js',desc:'Debts and a path to debt freedom, a monthly budget with charts, and savings goals.'}];
 var addonDefs={},addonState={},addonEls={};
 function addonOn(id){return !!(S&&S.settings&&S.settings.addons&&S.settings.addons[id]);}

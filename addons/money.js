@@ -184,6 +184,26 @@
       if (back) try { back.focus(); if (selS != null && back.setSelectionRange) back.setSelectionRange(selS, selE); } catch (_) {} }
   }
 
+  /* dates as Month / Day / Year dropdowns: works the same on every phone and computer */
+  var MONTHS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(function (m) { return new Date(2000, m - 1, 1).toLocaleDateString(undefined, { month: 'short' }); });
+  function dsel(k, id, val, y0, y1) {
+    var v = /^\d{4}-\d{2}-\d{2}$/.test(val || '') ? val.split('-') : ['', '', ''], cy = P(today()).getFullYear(), ys = [];
+    for (var y = cy + y0; y <= cy + y1; y++) ys.push(y);
+    if (v[0] && ys.indexOf(+v[0]) < 0) ys.push(+v[0]);
+    ys.sort();
+    var dis = RO();
+    return '<span class="mny-dsel" data-dk="' + k + '" data-id="' + esc(id) + '">' +
+      '<select data-part="m" aria-label="Month"' + dis + '><option value="">Month</option>' + MONTHS.map(function (n, ix) { return '<option value="' + (ix + 1) + '"' + (+v[1] === ix + 1 ? ' selected' : '') + '>' + n + '</option>'; }).join('') + '</select>' +
+      '<select data-part="d" aria-label="Day"' + dis + '><option value="">Day</option>' + Array.apply(null, Array(31)).map(function (_, ix) { return '<option value="' + (ix + 1) + '"' + (+v[2] === ix + 1 ? ' selected' : '') + '>' + (ix + 1) + '</option>'; }).join('') + '</select>' +
+      '<select data-part="y" aria-label="Year"' + dis + '><option value="">Year</option>' + ys.map(function (y) { return '<option value="' + y + '"' + (+v[0] === y ? ' selected' : '') + '>' + y + '</option>'; }).join('') + '</select>' +
+      (val && k === 'debt.promoEnd' && API && API.editable ? '<button type="button" class="mny-dclr" title="Clear" data-dclr="' + k + '" data-id="' + esc(id) + '" aria-label="Clear date">✕</button>' : '') + '</span>';
+  }
+  function dselValue(wrap) {
+    var g = function (p) { var e = wrap.querySelector('[data-part="' + p + '"]'); return e ? +e.value : 0; }, m = g('m'), d = g('d'), y = g('y');
+    if (!m || !d || !y) return null;
+    d = Math.min(d, dim(y, m - 1));
+    return y + '-' + ('0' + m).slice(-2) + '-' + ('0' + d).slice(-2);
+  }
   /* --- row editors (spreadsheet-style, saves as you type) --- */
   function incomeRows() {
     return '<div class="mny-rows">' + (D.incomes.length ? D.incomes.map(function (x) {
@@ -192,7 +212,7 @@
         '<select data-k="inc.freq" data-id="' + x.id + '"' + RO() + '>' + [['biweekly', 'Every 2 weeks'], ['weekly', 'Every week'], ['semimonthly', 'Twice a month'], ['monthly', 'Once a month']].map(function (o) { return '<option value="' + o[0] + '"' + ((x.freq || 'biweekly') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>' +
         ((x.freq === 'semimonthly' || x.freq === 'monthly') ?
           '<label class="mny-sm">On day <input data-k="inc.day1" data-id="' + x.id + '" inputmode="numeric" value="' + esc(x.day1 || 1) + '"' + RO() + '>' + (x.freq === 'semimonthly' ? ' &amp; <input data-k="inc.day2" data-id="' + x.id + '" inputmode="numeric" value="' + esc(x.day2 || 15) + '"' + RO() + '>' : '') + '</label>' :
-          '<label class="mny-sm">A payday: <input type="date" data-k="inc.anchor" data-id="' + x.id + '" value="' + esc(x.anchor || '') + '"' + RO() + '></label>') +
+          '<label class="mny-sm">A payday: ' + dsel('inc.anchor', x.id, x.anchor || '', -1, 1) + '</label>') +
         (API.editable ? '<button type="button" class="mny-del" data-del="incomes" data-id="' + x.id + '" aria-label="Remove">✕</button>' : '') + '</div>';
     }).join('') : '<div class="mny-empty">No paychecks yet.</div>') +
       (API.editable ? '<button type="button" class="mny-add" data-addrow="incomes">+ Add a paycheck</button>' : '') + '</div>';
@@ -203,7 +223,7 @@
       return '<div class="mny-row bill"><input data-k="bill.name" data-id="' + x.id + '" placeholder="Bill, e.g. Rent, Phone, Netflix" value="' + esc(x.name || '') + '"' + RO() + '>' +
         '<span class="mny-cur"><input data-k="bill.amount" data-id="' + x.id + '" inputmode="decimal" placeholder="Amount" value="' + esc(x.amount || '') + '"' + RO() + '></span>' +
         '<select data-k="bill.freq" data-id="' + x.id + '"' + RO() + '>' + [['monthly', 'Every month'], ['yearly', 'Once a year'], ['once', 'Just once']].map(function (o) { return '<option value="' + o[0] + '"' + (f === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>' +
-        (f === 'once' ? '<label class="mny-sm">Due <input type="date" data-k="bill.date" data-id="' + x.id + '" value="' + esc(x.date || '') + '"' + RO() + '></label>' :
+        (f === 'once' ? '<label class="mny-sm">Due ' + dsel('bill.date', x.id, x.date || '', 0, 3) + '</label>' :
           '<label class="mny-sm">Due day <input data-k="bill.day" data-id="' + x.id + '" inputmode="numeric" placeholder="1–31" value="' + esc(x.day || '') + '"' + RO() + '>' +
           (f === 'yearly' ? ' of <select data-k="bill.month" data-id="' + x.id + '"' + RO() + '>' + [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(function (mm) { return '<option value="' + mm + '"' + ((+x.month || 1) === mm ? ' selected' : '') + '>' + new Date(2000, mm - 1, 1).toLocaleDateString(undefined, { month: 'short' }) + '</option>'; }).join('') + '</select>' : '') + '</label>') +
         '<label class="mny-chk"><input type="checkbox" data-k="bill.autopay" data-id="' + x.id + '"' + (x.autopay ? ' checked' : '') + RO() + '> Autopay</label>' +
@@ -220,7 +240,7 @@
         '<label class="mny-sm">Due day <input data-k="debt.day" data-id="' + x.id + '" inputmode="numeric" placeholder="1–31" value="' + esc(x.day || '') + '"' + RO() + '></label>' +
         (API.editable ? '<button type="button" class="mny-del" data-del="debts" data-id="' + x.id + '" aria-label="Remove">✕</button>' : '') + '</div>' +
         (detail ? '<details class="mny-more"' + (x.promoEnd || x.fee || x.notes ? ' open' : '') + '><summary>Extras: 0% promo, yearly fee, notes</summary><div class="mny-row">' +
-          '<label class="mny-sm">0% until ' + i('promo') + '<input type="date" data-k="debt.promoEnd" data-id="' + x.id + '" value="' + esc(x.promoEnd || '') + '"' + RO() + '></label>' +
+          '<label class="mny-sm">0% until ' + i('promo') + '' + dsel('debt.promoEnd', x.id, x.promoEnd || '', 0, 6) + '</label>' +
           '<label class="mny-sm">Yearly fee ' + i('fee') + '<span class="mny-cur"><input data-k="debt.fee" data-id="' + x.id + '" inputmode="decimal" value="' + esc(x.fee || '') + '"' + RO() + '></span> in <select data-k="debt.feeMonth" data-id="' + x.id + '"' + RO() + '><option value="">—</option>' + [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(function (mm) { return '<option value="' + mm + '"' + ((+x.feeMonth) === mm ? ' selected' : '') + '>' + new Date(2000, mm - 1, 1).toLocaleDateString(undefined, { month: 'short' }) + '</option>'; }).join('') + '</select></label>' +
           '<label class="mny-chk"><input type="checkbox" data-k="debt.autopay" data-id="' + x.id + '"' + (x.autopay ? ' checked' : '') + RO() + '> Autopay</label>' +
           '<input class="mny-notes" data-k="debt.notes" data-id="' + x.id + '" placeholder="Notes" value="' + esc(x.notes || '') + '"' + RO() + '></div></details>' : '') + '</div>';
@@ -355,7 +375,7 @@
     var rate = num(D.taxRate);
     return '<div class="mny-rows">' + (list.length ? list.map(function (x) {
       var part = num(x.amount) * rate / 100;
-      return '<div class="mny-row payout"><input type="date" data-k="side.date" data-id="' + x.id + '" value="' + esc(x.date || '') + '"' + RO() + '>' +
+      return '<div class="mny-row payout">' + dsel('side.date', x.id, x.date || '', -2, 0) + '' +
         (D.sources.length ? '<select data-k="side.src" data-id="' + x.id + '"' + RO() + '>' + D.sources.map(function (q) { return '<option value="' + q.id + '"' + (x.src === q.id ? ' selected' : '') + '>' + esc(q.name || 'Unnamed') + '</option>'; }).join('') + '<option value=""' + (!x.src ? ' selected' : '') + '>Other…</option></select>' : '') +
         ((!D.sources.length || !x.src) ? '<input data-k="side.from" data-id="' + x.id + '" placeholder="From, e.g. client name" value="' + esc(x.from || '') + '"' + RO() + '>' : '') +
         '<span class="mny-cur"><input data-k="side.amount" data-id="' + x.id + '" inputmode="decimal" placeholder="Amount" value="' + esc(x.amount || '') + '"' + RO() + '></span>' +
@@ -430,7 +450,7 @@
     var ready = total > 0 ? Math.min(1, (paid + pot) / total) : 0;
     return '<div class="mny-card mny-event"><div class="mny-goal-h">' + ring(paid + pot, total) +
       '<div class="mny-goal-t"><input class="mny-gname" data-k="ev.name" data-id="' + ev.id + '" placeholder="Event, e.g. Our wedding" value="' + esc(ev.name || '') + '"' + RO() + '>' +
-        '<label class="mny-sm">When <input type="date" data-k="ev.date" data-id="' + ev.id + '" value="' + esc(ev.date || '') + '"' + RO() + '>' + (ev.date ? ' · ' + (mo > 0 ? spanWords(mo) + ' away' : 'this month') : '') + '</label></div>' +
+        '<label class="mny-sm">When ' + dsel('ev.date', ev.id, ev.date || '', 0, 6) + '' + (ev.date ? ' · ' + (mo > 0 ? spanWords(mo) + ' away' : 'this month') : '') + '</label></div>' +
         (API.editable ? '<button type="button" class="mny-del" data-del="events" data-id="' + ev.id + '" aria-label="Remove event">✕</button>' : '') + '</div>' +
       '<div class="mny-stats"><div><span>Total cost</span><b>' + money(total) + '</b></div><div><span>Already paid</span><b>' + money(paid) + '</b></div><div><span>Saved for it</span><b>' + money(pot) + '</b></div>' +
         '<div class="' + (need > 0 ? 'todo' : 'ok') + '"><span>Still need</span><b>' + money(need) + '</b></div></div>' +
@@ -488,8 +508,16 @@
   function findIn(list, id) { return D[list].filter(function (x) { return x.id === id; })[0]; }
   var LIST = { inc: 'incomes', bill: 'bills', debt: 'debts', side: 'side', src: 'sources', goal: 'goals' };
   function onInput(e) {
-    var el = e.target, k = el.getAttribute && el.getAttribute('data-k'); if (!k || !API.editable) return;
-    var id = el.getAttribute('data-id'), v = el.type === 'checkbox' ? el.checked : el.value;
+    var el = e.target, k = el.getAttribute && el.getAttribute('data-k'), id, v;
+    var wrap = el.closest && el.closest('.mny-dsel');
+    if (wrap) {
+      if (e.type !== 'change' || !API.editable) return;
+      var dv = dselValue(wrap); if (dv === null) return;           /* wait until month, day and year are all picked */
+      k = wrap.getAttribute('data-dk'); id = wrap.getAttribute('data-id'); v = dv;
+    } else {
+      if (!k || !API.editable) return;
+      id = el.getAttribute('data-id'); v = el.type === 'checkbox' ? el.checked : el.value;
+    }
     if (k === 'extra') D.extra = num(v);
     else if (k === 'taxRate') D.taxRate = Math.max(0, Math.min(60, num(v)));
     else if (k === 'showOnToday') D.showOnToday = !!v;
@@ -502,12 +530,18 @@
     /* redraw on change (not every keystroke) so numbers and plans update */
     /* date boxes: don't redraw while you're still typing the date (it would reset the year) - wait until you leave the box */
     if (el.type === 'date') { pendingDraw = true; return; }
+    if (wrap) { setTimeout(draw, 0); return; }
     if (e.type === 'change' || el.tagName === 'SELECT' || el.type === 'checkbox') setTimeout(draw, 0);   /* after focus moves, so Tab still works */
   }
   var pendingDraw = false;
   function onFocusOut(e) { if (pendingDraw && e.target && e.target.type === 'date') { pendingDraw = false; setTimeout(draw, 0); } }
   function onClick(e) {
     var t;
+    if ((t = e.target.closest('[data-dclr]')) && API.editable) {
+      var ck = t.getAttribute('data-dclr'), cid = t.getAttribute('data-id');
+      onInput({ type: 'change', target: { getAttribute: function (n) { return n === 'data-k' ? ck : n === 'data-id' ? cid : null; }, value: '', type: 'text', tagName: 'INPUT', closest: function () { return null; } } });
+      return;
+    }
     if ((t = e.target.closest('[data-tip]'))) { var k = t.getAttribute('data-tip'); tip = (k && tip !== k) ? k : null; draw(); return; }
     if ((t = e.target.closest('[data-tab]'))) { e.preventDefault(); tab = t.getAttribute('data-tab'); tip = null; draw(); return; }
     if (!API.editable) return;
@@ -637,6 +671,7 @@
     '.mny-event .mny-stats{margin-top:4px}.mny-plan{margin:10px 0 0;background:var(--accent-soft);border-radius:10px;padding:8px 11px;font-size:14px}' +
     '.mny-row.evitem>input:first-child{flex:1 1 200px}.mny-row.evitem.done>input:first-child{text-decoration:line-through;opacity:.6}' +
     '.mny-add.soft{border-style:dotted;color:var(--muted)}' +
+    '.mny-dsel{display:inline-flex;gap:4px;align-items:center;flex-wrap:nowrap}.mny-dsel select{padding:7px 6px!important}.mny-dsel select[data-part=d]{width:62px}.mny-dclr{color:var(--faint);font-size:12px;padding:4px}' +
     '.mny-note{font-size:12px;color:var(--faint);text-align:center}' +
     '.mny-payday{font-size:13px;background:color-mix(in srgb,#22c55e 12%,transparent);border-radius:9px;padding:6px 9px;margin-bottom:6px}' +
     '.addon-today .mny-due{font-size:13.5px}' +
