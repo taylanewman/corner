@@ -89,6 +89,8 @@
 .addon-row{align-items:flex-start;gap:10px}
 .fld[hidden]{display:none!important}
 .bunch-btn{padding:0 12px}
+.mp-cp{margin-left:auto}
+.mp-cp svg,.side-card h3 .link-btn svg{width:13px;height:13px;vertical-align:-2px;margin-right:3px}
 .bk-head,.bk-row{display:grid;grid-template-columns:minmax(0,1fr) 142px 104px 44px 30px;gap:6px;align-items:center}
 .bk-head{font-size:11.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);padding:0 2px 4px}
 .bk-rows{display:flex;flex-direction:column;gap:6px;max-height:46vh;overflow:auto;padding:2px}
@@ -1773,7 +1775,7 @@ function todayView(){
     (doneToday.length?'<section class="t-sec"><div class="done-today">'+ico.check+'<div><b>'+doneToday.length+' done today.</b> '+doneToday.map(function(t){return '<span class="dt-item" data-act="open-task" data-id="'+t.id+'" title="Open to edit or un-check">'+esc(t.title)+'</span>';}).join('')+'</div></div></section>':'')+
     '<section class="t-sec">'+prompts+'</section>';
   var side='<div class="side-card"><h3>Your week</h3>'+loadMeter(weekStart(),'This week')+loadMeter(addTo(weekStart(),7),'Next week')+'</div>'+
-    '<div class="side-card"><h3>Waiting on others'+(stuck.length?'<button class="link-btn sm" data-act="open-alerts">Review</button>':'')+'</h3>'+
+    '<div class="side-card"><h3>Waiting on others'+(stuck.length?'<span class="grow"></span><button class="link-btn sm" data-act="copy-stuck" data-id="all" title="Copy this list to paste anywhere">'+ico.copy+'Copy</button><button class="link-btn sm" data-act="open-alerts">Review</button>':'')+'</h3>'+
       (stuck.length>1?'<div class="wsort" role="group" aria-label="Sort waiting list">'+[['priority','Priority'],['longest','Longest'],['newest','Newest']].map(function(o){return '<button class="'+(ws===o[0]?'on':'')+'" data-act="wait-sort" data-id="'+o[0]+'">'+o[1]+'</button>';}).join('')+'</div>':'')+
       (stuck.length?stuck.slice(0,ui.waitAll?999:5).map(function(t){var a=stuckAlert(t);return '<div class="mini" data-act="open-task" data-id="'+t.id+'"><span class="mini-t">'+(t.priority==='high'?'<span class="pdot hi" title="High priority"></span>':'')+esc(t.title)+'</span><span class="chip stuck'+(a?' alert':'')+'">'+ico.pause+(t.blocked.by==='supervisor'?'Supervisor':'Team')+' · '+stuckDays(t)+'d</span></div>';}).join('')+(stuck.length>5?'<button class="link-btn sm wmore" data-act="wait-all">'+(ui.waitAll?'Show fewer':'Show all '+stuck.length)+'</button>':''):'<div class="hint">Nobody is holding you up.</div>')+
       (waitingDeps.length?'<div class="hint" style="margin-top:8px">'+ico.lock+' '+waitingDeps.length+' task'+(waitingDeps.length===1?'':'s')+' waiting on other tasks</div>':'')+'</div>'+
@@ -1996,7 +1998,7 @@ function meetingView(){
   var grid='<div class="mp-grid">'+
     '<section class="mp-card good"><h3>'+ico.check+'Done since then <span class="count">'+D.done.length+'</span></h3>'+mpList(D.done,mpTask(function(t){return 'finished '+relDay(t.completedAt);}),'Nothing finished yet in this stretch.')+'</section>'+
     '<section class="mp-card"><h3>'+ico.clock+'In progress <span class="count">'+D.doing.length+'</span></h3>'+mpList(D.doing,mpTask(function(t){return STATUS_LABEL[t.status]+(t.due?' · due '+relDay(t.due):'');}),'Nothing in progress.')+'</section>'+
-    '<section class="mp-card warn"><h3>'+ico.pause+'Waiting on you (supervisor) <span class="count">'+D.waiting.length+'</span></h3>'+mpList(D.waiting,mpTask(function(t){return 'waiting '+dayWord(stuckDays(t))+(t.blocked.note?' · “'+esc(t.blocked.note)+'”':'');}),'Nothing is waiting on your supervisor.')+
+    '<section class="mp-card warn"><h3>'+ico.pause+'Waiting on you (supervisor) <span class="count">'+D.waiting.length+'</span>'+(D.waiting.length?'<button class="link-btn sm mp-cp" data-act="copy-stuck" data-id="supervisor">'+ico.copy+'Copy list</button>':'')+'</h3>'+mpList(D.waiting,mpTask(function(t){return 'waiting '+dayWord(stuckDays(t))+(t.blocked.note?' · “'+esc(t.blocked.note)+'”':'');}),'Nothing is waiting on your supervisor.')+
       (D.team.length?'<div class="hint" style="margin-top:8px">Also waiting on the team: '+D.team.map(function(t){return esc(t.title);}).join(', ')+'</div>':'')+'</section>'+
     '<section class="mp-card"><h3>'+ico.cal+'Coming up (2 weeks) <span class="count">'+D.next.length+'</span></h3>'+mpList(D.next,mpTask(function(t){return 'due '+relDay(t.due);}),'No deadlines in the next 2 weeks.')+'</section>'+
     '<section class="mp-card wide"><h3>'+ico.chat+'Questions to ask <span class="count">'+S.questions.length+'</span></h3>'+
@@ -2632,6 +2634,10 @@ root.addEventListener('click',function(e){
     case 'skip-today':var sk=task(id);if(sk){sk.skip=TODAY;if(sk.today===TODAY)sk.today='';commit();}break;
     case 'pick-today':openPickToday();break;
     case 'cal-nav':calShift(+el.getAttribute('data-n'));render();break;
+    case 'copy-stuck':var who=id,sl=stuckTasks().filter(function(t){return who==='all'||t.blocked.by===who;}).sort(function(a,b){return stuckDays(b)-stuckDays(a);});
+      var ctx2=sl.map(function(t){var p=proj(t.projectId);return '- '+t.title+(p?' ('+p.name+')':'')+(who==='all'?' – '+(t.blocked.by==='team'?'team':'supervisor'):'')+', waiting '+dayWord(stuckDays(t))+(t.blocked.note?': '+t.blocked.note:'');}).join('\n');
+      if(!ctx2){toast('Nothing to copy');break;}
+      if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(ctx2).then(function(){toast('Copied '+sl.length+' item'+(sl.length===1?'':'s')+'. Paste it anywhere');},function(){showCopyBox(ctx2);});else showCopyBox(ctx2);break;
     case 'mp-copy':var txt=prepText();if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(txt).then(function(){toast('Summary copied. Paste it into an email or chat');},function(){showCopyBox(txt);});else showCopyBox(txt);break;
     case 'mp-present':ui.present=!ui.present;render();break;
     case 'mp-log':openLogMeeting();break;

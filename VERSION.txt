@@ -13,3 +13,4 @@ Corner (private version)
 2026-11-18  Money: dates are now Month/Day/Year dropdowns; add-on updates always load fresh
 2026-11-18  Money: dates are now Month/Day/Year dropdowns; add-on updates always load fresh
 2026-11-19  Calendar: long task names wrap inside their day
+2026-11-19  Copy list of stuck items (Today and Meeting prep)
