@@ -500,8 +500,12 @@
     else { var parts = k.split('.'), item = findIn(LIST[parts[0]], id); if (!item) return; item[parts[1]] = v; }
     save();
     /* redraw on change (not every keystroke) so numbers and plans update */
+    /* date boxes: don't redraw while you're still typing the date (it would reset the year) - wait until you leave the box */
+    if (el.type === 'date') { pendingDraw = true; return; }
     if (e.type === 'change' || el.tagName === 'SELECT' || el.type === 'checkbox') setTimeout(draw, 0);   /* after focus moves, so Tab still works */
   }
+  var pendingDraw = false;
+  function onFocusOut(e) { if (pendingDraw && e.target && e.target.type === 'date') { pendingDraw = false; setTimeout(draw, 0); } }
   function onClick(e) {
     var t;
     if ((t = e.target.closest('[data-tip]'))) { var k = t.getAttribute('data-tip'); tip = (k && tip !== k) ? k : null; draw(); return; }
@@ -653,7 +657,7 @@
     },
     mount: function (el, api) {
       API = API || api; ensureCss(); root = el;
-      el.addEventListener('input', onInput); el.addEventListener('change', onInput); el.addEventListener('click', onClick);
+      el.addEventListener('input', onInput); el.addEventListener('change', onInput); el.addEventListener('click', onClick); el.addEventListener('focusout', onFocusOut);
       draw();
     },
     onShow: function () { draw(); },
