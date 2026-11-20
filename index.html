@@ -95,6 +95,7 @@
 .rd-item{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);border-radius:12px;cursor:pointer}
 .rd-item:hover{background:var(--surface-2)}.rd-item input{margin-top:3px}
 .rd-t{border-collapse:collapse;margin-top:6px;font-size:13px}.rd-t th{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);text-align:left;padding:0 14px 2px 0}.rd-t td{padding:2px 14px 2px 0;color:var(--muted)}.rd-t td:first-child{font-weight:600;color:var(--text)}
+.rd-item.gone{opacity:.75}
 .rd-hint{font-size:12.5px;margin-top:6px;color:var(--accent)}
 .rd-row{font-size:13px;color:var(--muted);margin-top:3px;white-space:pre-wrap}.rd-row span{font-weight:600;color:var(--text);margin-right:6px}
 .bk-head,.bk-row{display:grid;grid-template-columns:minmax(0,1fr) 142px 104px 44px 30px;gap:6px;align-items:center}
@@ -981,18 +982,22 @@ function diffVal(f,v){
   if(f==='priority')return ({high:'High',med:'Medium',low:'Low'})[v]||v||'—';
   return (v===''||v==null)?'—':String(v);
 }
+function deletedSince(name,isWeb,since){
+  return (S.activity||[]).some(function(a){return a.at>=since&&a.msg===(isWeb?'Deleted project “'+name+'”':'Deleted “'+name+'”');});
+}
 function recoveryDiff(R){
+  var since=(recovery&&recovery.at)||'';
   var out=[],cur={};S.tasks.forEach(function(t){cur[t.id]=t;});
   (R.tasks||[]).forEach(function(rt){
     var ct=cur[rt.id];
-    if(!ct){out.push({kind:'task-new',id:rt.id,label:rt.title,rows:[['','Not in your saved tasks']],apply:function(){S.tasks.push(JSON.parse(JSON.stringify(rt)));}});return;}
+    if(!ct){var gone=deletedSince(rt.title,false,since);out.push({kind:'task-new',gone:gone,id:rt.id,label:rt.title,rows:[['',gone?'You deleted this after that time. Leave it unticked to keep it deleted.':'Missing from your saved tasks now. Either it never saved, or you removed it. Tick it only if you want it back.']],apply:function(){S.tasks.push(JSON.parse(JSON.stringify(rt)));}});return;}
     var nz=function(v){return (v==null||v===false||v===''||v===0||(Array.isArray(v)&&!v.length))?'':v;};var rows=[];DIFF_FIELDS.forEach(function(f){var a=JSON.stringify(nz(rt[f[0]])),b=JSON.stringify(nz(ct[f[0]]));if(a!==b)rows.push([f[1],diffVal(f[0],ct[f[0]]),diffVal(f[0],rt[f[0]])]);});
     if(rows.length)out.push({kind:'task',id:rt.id,label:ct.title,rows:rows,apply:function(){var t=task(rt.id);if(!t)return;DIFF_FIELDS.forEach(function(f){t[f[0]]=JSON.parse(JSON.stringify(rt[f[0]]==null?(f[0]==='subtasks'?[]:''):rt[f[0]]));});}});
   });
   var cp={};S.projects.forEach(function(p){cp[p.id]=p;});
   (R.projects||[]).forEach(function(rp){
     var c=cp[rp.id];
-    if(!c){out.push({kind:'web-new',id:rp.id,label:rp.name,rows:[['','Web not in your saved webs']],apply:function(){S.projects.push(JSON.parse(JSON.stringify(rp)));}});return;}
+    if(!c){var goneW=deletedSince(rp.name,true,since);out.push({kind:'web-new',gone:goneW,id:rp.id,label:rp.name,rows:[['',goneW?'You deleted this web after that time. Leave it unticked to keep it deleted.':'Missing from your saved webs now. Either it never saved, or you removed it. Tick it only if you want it back.']],apply:function(){S.projects.push(JSON.parse(JSON.stringify(rp)));}});return;}
     var rows=[];if(c.name!==rp.name)rows.push(['Name',c.name,rp.name]);if((c.parentId||'')!==(rp.parentId||''))rows.push(['Inside',diffVal('projectId',c.parentId),diffVal('projectId',rp.parentId)]);if(c.color!==rp.color)rows.push(['Color','current color','a different color']);if(Math.round(c.x)!==Math.round(rp.x)||Math.round(c.y)!==Math.round(rp.y))rows.push(['Position','where it is now','where you’d moved it']);
     if(rows.length)out.push({kind:'web',id:rp.id,label:c.name,rows:rows,apply:function(){var p=proj(rp.id);if(!p)return;['name','parentId','color','x','y'].forEach(function(k){p[k]=rp[k];});}});
   });
@@ -1010,7 +1015,7 @@ function openRecoverDiff(){
   var items=recoveryDiff(R),when=recovery.at?new Date(recovery.at).toLocaleString(undefined,{weekday:'short',hour:'numeric',minute:'2-digit'}):'earlier';
   var d=openModal('<div class="dlg-h"><h2>Unsaved changes from '+esc(when)+'</h2><button class="icon-btn" data-m="close" aria-label="Close">'+ico.x+'</button></div>'+
     (items.length?'<p class="hint" style="margin:-4px 0 10px">For each item: <b>Now</b> is what’s saved today. <b>Unsaved copy</b> is how it looked at '+esc(when)+'. Tick an item only if the unsaved copy is the one you want. Anything you don’t tick stays as it is now.</p>'+
-      '<div class="rd-list">'+items.map(function(it,ix){return '<label class="rd-item"><input type="checkbox" data-ix="'+ix+'"'+(it.kind==='task-new'||it.kind==='web-new'?' checked':'')+'><div><b>'+(it.kind.indexOf('web')===0?'🕸 ':'')+esc(it.label||'(untitled)')+'</b>'+(it.rows[0]&&it.rows[0].length===3?'<table class="rd-t"><tr><th></th><th>Now</th><th>Unsaved copy</th></tr>'+it.rows.map(function(r){return '<tr><td>'+esc(r[0])+'</td><td>'+esc(r[1])+'</td><td>'+esc(r[2])+'</td></tr>';}).join('')+'</table>'+rdHint(it):it.rows.map(function(r){return '<div class="rd-row">'+esc(r[1])+'</div>';}).join(''))+'</div></label>';}).join('')+'</div>'
+      '<div class="rd-list">'+items.map(function(it,ix){return '<label class="rd-item'+(it.gone?' gone':'')+'"><input type="checkbox" data-ix="'+ix+'"><div><b>'+(it.kind.indexOf('web')===0?'🕸 ':'')+esc(it.label||'(untitled)')+'</b>'+(it.rows[0]&&it.rows[0].length===3?'<table class="rd-t"><tr><th></th><th>Now</th><th>Unsaved copy</th></tr>'+it.rows.map(function(r){return '<tr><td>'+esc(r[0])+'</td><td>'+esc(r[1])+'</td><td>'+esc(r[2])+'</td></tr>';}).join('')+'</table>'+rdHint(it):it.rows.map(function(r){return '<div class="rd-row">'+esc(r[1])+'</div>';}).join(''))+'</div></label>';}).join('')+'</div>'
       :'<p>Good news: everything in that unsaved copy is already saved. Nothing is missing.</p>')+
     '<div class="dlg-f"><button class="btn ghost" data-m="discard">Discard all</button><span class="grow"></span><button class="btn ghost" data-m="close">Decide later</button>'+(items.length?'<button class="btn primary" data-m="apply">Bring back ticked</button>':'')+'</div>','wide');
   d.addEventListener('click',function(e){

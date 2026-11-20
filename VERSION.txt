@@ -16,3 +16,4 @@ Corner (private version)
 2026-11-19  Copy list of stuck items (Today and Meeting prep)
 2026-11-20  Unsaved changes: see what's different and pick what to bring back
 2026-11-20  Clearer unsaved-changes view (Now vs Unsaved copy)
+2026-11-20  Unsaved-changes view: recognises things you deleted later; nothing pre-ticked
